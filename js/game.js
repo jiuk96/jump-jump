@@ -191,6 +191,104 @@ for (const k of COSMETICS) equip[k] = false;
 try { equip = Object.assign(equip, JSON.parse(localStorage.getItem('jump-equip') || '{}')); } catch (e) {}
 function saveEquip() { localStorage.setItem('jump-equip', JSON.stringify(equip)); }
 
+// ---------- 온라인 랭킹 (Supabase) ----------
+const SUPA_URL = 'https://phegkfmhshinlalimdxg.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBoZWdrZm1oc2hpbmxhbGltZHhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2OTU1MjAsImV4cCI6MjEwMDI3MTUyMH0.tCOfPLf4zuguy6g-TbHaOiMpnxn3N8JI3LEVqlVi3Qk';
+const supaHeaders = {
+  apikey: SUPA_KEY,
+  Authorization: `Bearer ${SUPA_KEY}`,
+  'Content-Type': 'application/json',
+};
+let myName = localStorage.getItem('jump-name') || '';
+
+async function submitScore(name, sc) {
+  try {
+    const res = await fetch(`${SUPA_URL}/rest/v1/scores`, {
+      method: 'POST',
+      headers: { ...supaHeaders, Prefer: 'return=minimal' },
+      body: JSON.stringify({ name, score: sc }),
+    });
+    return res.ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+// 최근 상위 기록을 가져와 닉네임별 최고점만 남김
+async function fetchScores(weekly) {
+  let url = `${SUPA_URL}/rest/v1/scores?select=name,score,created_at&order=score.desc&limit=300`;
+  if (weekly) {
+    const since = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+    url += `&created_at=gte.${since}`;
+  }
+  const res = await fetch(url, { headers: supaHeaders });
+  if (!res.ok) throw new Error('fetch failed');
+  const rows = await res.json();
+  const bestByName = new Map();
+  for (const r of rows) {
+    if (!bestByName.has(r.name) || bestByName.get(r.name).score < r.score) {
+      bestByName.set(r.name, r);
+    }
+  }
+  return [...bestByName.values()].sort((a, b) => b.score - a.score).slice(0, 50);
+}
+
+function askNickname() {
+  const cur = myName || '';
+  let n = prompt('랭킹에 표시할 닉네임을 입력하세요 (1~12자)', cur);
+  if (n === null) return null;
+  n = n.trim().slice(0, 12);
+  if (!n) return null;
+  myName = n;
+  localStorage.setItem('jump-name', n);
+  return n;
+}
+
+async function autoSubmitScore() {
+  const el = $('lb-status');
+  const regBtn = $('btn-register');
+  el.textContent = '';
+  regBtn.classList.add('hidden');
+  if (score < 100) return; // 너무 낮은 점수는 등록하지 않음
+  if (!myName) {
+    regBtn.classList.remove('hidden');
+    return;
+  }
+  el.textContent = '🏅 랭킹 등록 중...';
+  const ok = await submitScore(myName, score);
+  el.textContent = ok ? `🏅 ${myName} — 랭킹에 등록됨!` : '⚠️ 랭킹 등록 실패 (네트워크 확인)';
+}
+
+let lbWeekly = false;
+async function renderLeaderboard() {
+  const list = $('lb-list');
+  $('lb-tab-all').classList.toggle('active', !lbWeekly);
+  $('lb-tab-week').classList.toggle('active', lbWeekly);
+  $('lb-my').textContent = myName ? `내 닉네임: ${myName} · 최고 ${best}점` : '게임오버 화면에서 닉네임을 만들면 랭킹에 올라갑니다';
+  list.innerHTML = '<div class="lb-info">불러오는 중...</div>';
+  try {
+    const rows = await fetchScores(lbWeekly);
+    if (!rows.length) {
+      list.innerHTML = '<div class="lb-info">아직 기록이 없어요. 첫 주인공이 되어보세요!</div>';
+      return;
+    }
+    list.innerHTML = '';
+    const medals = ['🥇', '🥈', '🥉'];
+    rows.forEach((r, i) => {
+      const el = document.createElement('div');
+      el.className = 'lb-row' + (r.name === myName ? ' me' : '');
+      el.innerHTML = `
+        <span class="lb-rank">${medals[i] || (i + 1)}</span>
+        <span class="lb-name"></span>
+        <span class="lb-score">${r.score.toLocaleString()}</span>`;
+      el.querySelector('.lb-name').textContent = r.name; // XSS 방지: textContent 사용
+      list.appendChild(el);
+    });
+  } catch (e) {
+    list.innerHTML = '<div class="lb-info">⚠️ 랭킹을 불러오지 못했어요.<br>인터넷 연결을 확인해주세요.</div>';
+  }
+}
+
 // ---------- 진동 ----------
 function vib(ms) {
   try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {}
@@ -2417,6 +2515,7 @@ function gameOver() {
   $('new-record').classList.toggle('hidden', !isRecord);
   overScreen.classList.remove('hidden');
   pauseBtn.classList.add('hidden');
+  autoSubmitScore();
 }
 
 function goHome() {
@@ -2426,6 +2525,7 @@ function goHome() {
   pauseScreen.classList.add('hidden');
   helpScreen.classList.add('hidden');
   $('ach-screen').classList.add('hidden');
+  $('lb-screen').classList.add('hidden');
   pauseBtn.classList.add('hidden');
   startScreen.classList.remove('hidden');
   refreshMenu();
@@ -2468,6 +2568,20 @@ $('btn-ach').addEventListener('click', () => {
 });
 $('btn-ach-back').addEventListener('click', goHome);
 $('btn-share').addEventListener('click', shareResult);
+$('btn-lb').addEventListener('click', () => {
+  startScreen.classList.add('hidden');
+  $('lb-screen').classList.remove('hidden');
+  renderLeaderboard();
+});
+$('btn-lb-back').addEventListener('click', () => {
+  $('lb-screen').classList.add('hidden');
+  startScreen.classList.remove('hidden');
+});
+$('lb-tab-all').addEventListener('click', () => { lbWeekly = false; renderLeaderboard(); });
+$('lb-tab-week').addEventListener('click', () => { lbWeekly = true; renderLeaderboard(); });
+$('btn-register').addEventListener('click', () => {
+  if (askNickname()) autoSubmitScore();
+});
 
 function refreshBgmBtn() {
   $('btn-bgm').textContent = bgm.on ? '🔊 음악 켜짐' : '🔇 음악 꺼짐';
