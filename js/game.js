@@ -31,8 +31,8 @@ const BULLET_VY = -12;
 const COIN_R = 9;              // 코인 반지름
 const MAGNET_RANGE = 110;      // 자석 흡인 범위
 const REVIVE_INVINCIBLE = 180; // 부활 후 무적 프레임
-const PRICES = { life: 150, rocket: 50, magnet: 75 };
-const MAX_OWN = { life: 3, rocket: 9, magnet: 9 };
+const PRICES = { life: 150, rocket: 50, magnet: 75, hat: 300, scarf: 250, glasses: 400 };
+const MAX_OWN = { life: 3, rocket: 9, magnet: 9, hat: 1, scarf: 1, glasses: 1 };
 
 // ---------- 발판 ----------
 const PLAT_W = 62;
@@ -119,13 +119,91 @@ const sfx = {
 // ---------- 저장 데이터 (지갑/인벤토리) ----------
 let best = Number(localStorage.getItem('jump-best') || 0);
 let wallet = Number(localStorage.getItem('jump-coins') || 0);
-let inv = { life: 0, rocket: 0, magnet: 0 };
+let inv = { life: 0, rocket: 0, magnet: 0, hat: 0, scarf: 0, glasses: 0 };
 try {
   inv = Object.assign(inv, JSON.parse(localStorage.getItem('jump-inv') || '{}'));
 } catch (e) { /* 손상된 저장값은 무시 */ }
 
 function saveWallet() { localStorage.setItem('jump-coins', String(wallet)); }
 function saveInv() { localStorage.setItem('jump-inv', JSON.stringify(inv)); }
+
+// ---------- 누적 통계 & 도전과제 ----------
+let stats = {
+  runs: 0, totalScore: 0, bestScore: 0, coins: 0, kills: 0,
+  missions: 0, stars: 0, maxCombo: 0, revives: 0, space: false,
+};
+try { stats = Object.assign(stats, JSON.parse(localStorage.getItem('jump-stats') || '{}')); } catch (e) {}
+let unlockedAch = new Set();
+try { unlockedAch = new Set(JSON.parse(localStorage.getItem('jump-ach') || '[]')); } catch (e) {}
+function saveStats() { localStorage.setItem('jump-stats', JSON.stringify(stats)); }
+function saveAch() { localStorage.setItem('jump-ach', JSON.stringify([...unlockedAch])); }
+
+const ACHIEVEMENTS = [
+  { id: 'score10k', name: '하늘 높이', desc: '한 판에 10,000점 달성', target: 10000, get: (s) => s.bestScore, reward: 150 },
+  { id: 'space', name: '우주 여행자', desc: '우주에 도달하기 (14,000점)', target: 1, get: (s) => (s.space ? 1 : 0), reward: 300 },
+  { id: 'coins500', name: '코인 부자', desc: '코인 누적 500개 모으기', target: 500, get: (s) => s.coins, reward: 200 },
+  { id: 'kill50', name: '몬스터 헌터', desc: '몬스터 누적 50마리 처치', target: 50, get: (s) => s.kills, reward: 200 },
+  { id: 'mission20', name: '미션 마스터', desc: '미션 20회 완수', target: 20, get: (s) => s.missions, reward: 200 },
+  { id: 'star5', name: '별의 아이', desc: '스타 파워 5회 발동', target: 5, get: (s) => s.stars, reward: 150 },
+  { id: 'combo30', name: '콤보의 왕', desc: '한 판에 콤보 30 달성', target: 30, get: (s) => s.maxCombo, reward: 200 },
+  { id: 'runs50', name: '끈기의 둥이', desc: '50판 플레이', target: 50, get: (s) => s.runs, reward: 150 },
+  { id: 'total100k', name: '마라토너', desc: '누적 100,000점 오르기', target: 100000, get: (s) => s.totalScore, reward: 300 },
+  { id: 'revive3', name: '불사조', desc: '생명으로 3회 부활', target: 3, get: (s) => s.revives, reward: 100 },
+];
+
+const achToast = []; // 달성 알림 대기열
+function checkAchievements() {
+  for (const a of ACHIEVEMENTS) {
+    if (unlockedAch.has(a.id)) continue;
+    if (a.get(stats) >= a.target) {
+      unlockedAch.add(a.id);
+      wallet += a.reward;
+      saveWallet();
+      saveAch();
+      achToast.push(a);
+      sfx.bonus();
+      vib(80);
+    }
+  }
+}
+
+// ---------- 꾸미기 (액세서리) ----------
+const COSMETICS = ['hat', 'scarf', 'glasses'];
+let equip = { hat: false, scarf: false, glasses: false };
+try { equip = Object.assign(equip, JSON.parse(localStorage.getItem('jump-equip') || '{}')); } catch (e) {}
+function saveEquip() { localStorage.setItem('jump-equip', JSON.stringify(equip)); }
+
+// ---------- 진동 ----------
+function vib(ms) {
+  try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {}
+}
+
+// ---------- 배경음악 (칩튠 루프) ----------
+const bgm = {
+  on: localStorage.getItem('jump-bgm') !== '0',
+  timer: null,
+  step: 0,
+  MEL: [523, 659, 784, 659, 587, 698, 880, 698, 523, 659, 784, 880, 784, 698, 659, 587],
+  BASS: [131, 131, 147, 147, 165, 165, 147, 131],
+  start() {
+    if (!this.on || this.timer) return;
+    this.timer = setInterval(() => {
+      const i = this.step++;
+      if (i % 2 === 0) beep(this.BASS[(i >> 1) % 8], 0.16, 'triangle', 0.045);
+      beep(this.MEL[i % 16], 0.09, 'square', 0.028);
+    }, 150);
+  },
+  stop() {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+  },
+  toggle() {
+    this.on = !this.on;
+    localStorage.setItem('jump-bgm', this.on ? '1' : '0');
+    if (!this.on) this.stop();
+    else if (state === State.PLAYING || state === State.COUNTDOWN) this.start();
+  },
+};
 
 // ---------- 미션 시스템 ----------
 // 미션을 완수하면 보너스 타임: 제트팩을 타고 무적 상태로 상승!
@@ -231,7 +309,11 @@ function completeMission() {
   jetpackTimer = Math.max(jetpackTimer, 0) + BONUS_JETPACK;
   invincible = Math.max(invincible, BONUS_INVINCIBLE);
   sfx.bonus();
+  vib(80);
   addBurst(player.x, player.y, '#f1c40f');
+  stats.missions++;
+  saveStats();
+  checkAchievements();
 }
 
 // 별 10개 → 스타 파워: 짧은 무적 비행
@@ -243,7 +325,11 @@ function starPower() {
   jetpackTimer = Math.max(jetpackTimer, 0) + STAR_FLIGHT;
   invincible = Math.max(invincible, STAR_FLIGHT + 60);
   sfx.bonus();
+  vib(80);
   addBurst(player.x, player.y, '#ffd832');
+  stats.stars++;
+  saveStats();
+  checkAchievements();
 }
 
 // ---------- 날씨 ----------
@@ -309,6 +395,24 @@ let flashSub = '';
 
 const STAR_GOAL = 10;
 const STAR_FLIGHT = 190;  // 스타 파워 비행 프레임 (짧게)
+
+let combo;             // 연속 새 발판 콤보
+let floatTexts;        // 떠오르는 텍스트 [{x,y,text,life,color,size,screen}]
+let shakeT;            // 화면 흔들림 프레임
+let ambients;          // 배경 오브젝트 (비행기/열기구/위성/별똥별)
+let ambientTimer;
+let blackholes;        // 블랙홀 [{x,y,r,spin}]
+let dizzyClouds;       // 어지러움 구름 [{x,y,w,h,used}]
+let reversedT;         // 조작 반전 남은 프레임
+let lastCloseCall;     // '아슬아슬' 중복 방지
+let ghostPts = null;   // 최고 기록 고스트 궤적
+let ghostRec;          // 이번 판 기록
+const GHOST_STEP = 3;  // 몇 프레임마다 기록할지
+let tut;               // 첫 판 튜토리얼 안내 플래그
+
+function addFloat(text, x, y, color = '#e67e22', size = 16, screen = false) {
+  floatTexts.push({ text, x, y, color, size, life: 110, screen });
+}
 
 // ---------- 입력 ----------
 const input = { left: false, right: false, tilt: 0 };
@@ -407,6 +511,25 @@ function newGame() {
   weatherWait = Math.round(rand(600, 1500));
   weatherDrops = [];
 
+  // 콤보/연출/위험 요소/고스트 초기화
+  combo = 0;
+  floatTexts = [];
+  shakeT = 0;
+  ambients = [];
+  ambientTimer = Math.round(rand(400, 900));
+  blackholes = [];
+  dizzyClouds = [];
+  reversedT = 0;
+  lastCloseCall = -999;
+  ghostRec = [];
+  try {
+    const g = JSON.parse(localStorage.getItem('jump-ghost') || 'null');
+    ghostPts = g && Array.isArray(g.pts) && g.pts.length > 10 ? g.pts : null;
+  } catch (e) { ghostPts = null; }
+  tut = localStorage.getItem('jump-tut-done')
+    ? null
+    : { move: false, spring: false, coin: false, star: false, mission: false };
+
   // 들고 들어가는 아이템: 생명은 보유분 그대로, 로켓/자석은 있으면 1개 자동 사용
   lives = inv.life;
   magnetActive = false;
@@ -486,15 +609,29 @@ function spawnPlatformRow() {
     }
   }
 
-  // 몬스터: 1500점부터 등장, 후반으로 갈수록 잦아짐
+  // 몬스터: 1500점부터 등장, 후반으로 갈수록 잦아짐 (7000점부터는 UFO도)
   if (score > 1500 && Math.random() < 0.02 + d * 0.07) {
+    const isUfo = score > 7000 && Math.random() < 0.35;
     monsters.push({
       x: rand(30, W - 30), y: y - 40,
-      w: 40, h: 34,
+      w: isUfo ? 50 : 40, h: 34,
       vx: rand(0.5, 1.2 + d * 0.8) * (Math.random() < 0.5 ? -1 : 1),
       dead: false,
       wobble: Math.random() * Math.PI * 2,
+      kind: isUfo ? 'ufo' : 'bug',
+      hp: isUfo ? 2 : 1,
+      baseY: y - 40,
     });
+  }
+
+  // 블랙홀: 6000점부터 드물게 (닿으면 빨려들어감!)
+  if (score > 6000 && Math.random() < 0.010 + d * 0.012) {
+    blackholes.push({ x: rand(45, W - 45), y: y - rand(40, 90), r: 24, spin: 0 });
+  }
+
+  // 어지러움 구름: 5000점부터 드물게 (통과하면 잠시 조작 반전)
+  if (score > 5000 && Math.random() < 0.012 + d * 0.012) {
+    dizzyClouds.push({ x: rand(50, W - 50), y: y - rand(30, 70), w: 74, h: 36, used: false });
   }
 
   highestPlatY = y;
@@ -521,8 +658,14 @@ function tryRevive() {
     player.vx = 0;
     invincible = REVIVE_INVINCIBLE;
     jetpackTimer = 0;
+    combo = 0;
+    shakeT = 14;
     sfx.revive();
+    vib(120);
     addBurst(player.x, player.y, '#e74c3c');
+    stats.revives++;
+    saveStats();
+    checkAchievements();
     return true;
   }
   gameOver();
@@ -534,11 +677,14 @@ function update() {
   frame++;
   if (invincible > 0) invincible--;
 
-  // --- 좌우 이동 ---
+  // --- 좌우 이동 (어지러움 구름에 닿으면 잠시 반전!) ---
+  if (reversedT > 0) reversedT--;
+  const rev = reversedT > 0 ? -1 : 1;
   let ax = 0;
   if (input.left) ax -= MOVE_ACC;
   if (input.right) ax += MOVE_ACC;
   ax += input.tilt * MOVE_ACC * 1.6;
+  ax *= rev;
   player.vx = clamp((player.vx + ax) * (ax === 0 ? MOVE_FRICTION : 1), -MOVE_MAX, MOVE_MAX);
   player.x += player.vx;
   if (Math.abs(player.vx) > 0.3) player.facing = player.vx < 0 ? 'left' : 'right';
@@ -593,6 +739,34 @@ function update() {
         const fresh = !landedSet.has(p);
         landedSet.add(p);
         missionEvent('Land', p, { fresh, spring: usedSpring });
+
+        // 콤보: 새 발판 연속 밟기
+        if (fresh) {
+          combo++;
+          if (combo > stats.maxCombo) { stats.maxCombo = combo; saveStats(); checkAchievements(); }
+          if (combo >= 5) score += Math.min(combo, 30); // 콤보 보너스 점수
+          if (combo % 10 === 0) {
+            runCoins += 3;
+            wallet += 3;
+            saveWallet();
+            addFloat(`x${combo} 콤보! +3🪙`, player.x, player.y - 40, '#e056fd', 18);
+            sfx.buy();
+          }
+        } else {
+          combo = 0;
+        }
+
+        // 아슬아슬: 발판 가장자리에 겨우 착지
+        if (Math.abs(player.x - (p.x + p.w / 2)) > p.w / 2 - 3 && frame - lastCloseCall > 90) {
+          lastCloseCall = frame;
+          addFloat('아슬아슬!', player.x, player.y - 42, '#ff6b6b', 15);
+        }
+
+        // 튜토리얼: 첫 스프링
+        if (tut && usedSpring && !tut.spring) {
+          tut.spring = true;
+          addFloat('스프링! 아주 높이 점프! 🔴', W / 2, 190, '#e74c3c', 16, true);
+        }
         break;
       }
     }
@@ -645,14 +819,24 @@ function update() {
         starCount++;
         sfx.spring();
         addBurst(c.x, c.y, '#ffd832');
+        if (tut && !tut.star) {
+          tut.star = true;
+          addFloat('별 10개를 모으면 스타 파워! ⭐', W / 2, 190, '#c78a00', 16, true);
+        }
         if (starCount >= STAR_GOAL) starPower();
       } else {
         runCoins++;
         wallet++;
+        stats.coins++;
         saveWallet();
         sfx.coin();
         particles.push({ x: c.x, y: c.y, vx: 0, vy: -1.5, life: 18, color: '#f1c40f' });
         missionEvent('Coin');
+        if (tut && !tut.coin) {
+          tut.coin = true;
+          addFloat('코인으로 상점에서 아이템을 사요! 🪙', W / 2, 190, '#b7791f', 16, true);
+        }
+        if (stats.coins % 25 === 0) { saveStats(); checkAchievements(); }
       }
     }
   }
@@ -661,11 +845,100 @@ function update() {
   // --- 날씨 (비/눈) ---
   updateWeather();
 
+  // --- 블랙홀: 근처에 가면 빨려들어감 ---
+  for (const bh of blackholes) {
+    bh.spin += 0.06;
+    const dx = bh.x - player.x, dy = bh.y - player.y;
+    const dist = Math.hypot(dx, dy);
+    if (invincible <= 0 && jetpackTimer <= 0 && dist < 120) {
+      const pull = (1 - dist / 120) * 1.15;
+      player.vx += (dx / dist) * pull;
+      player.vy += (dy / dist) * pull * 0.8;
+      if (dist < bh.r * 0.7) {
+        shakeT = 18;
+        addBurst(player.x, player.y, '#6c5ce7');
+        if (!tryRevive()) return;
+      }
+    }
+  }
+  blackholes = blackholes.filter((b) => b.y < cameraY + H + 80);
+
+  // --- 어지러움 구름 ---
+  for (const dc of dizzyClouds) {
+    if (dc.used) continue;
+    if (Math.abs(player.x - dc.x) < dc.w / 2 + 10 && Math.abs(player.y - dc.y) < dc.h / 2 + 14) {
+      dc.used = true;
+      reversedT = 190;
+      addFloat('어지러워~! 조작 반전!', player.x, player.y - 44, '#a55eea', 16);
+      sfx.break();
+      vib(60);
+    }
+  }
+  dizzyClouds = dizzyClouds.filter((d) => d.y < cameraY + H + 60);
+
+  // --- 배경 오브젝트 (비행기/열기구/위성/별똥별) ---
+  if (--ambientTimer <= 0 && ambients.length < 2) {
+    ambientTimer = Math.round(rand(500, 1100));
+    const opts = [];
+    if (score < 5000) opts.push('balloon');
+    if (score > 1500 && score < 9500) opts.push('plane');
+    if (score > 9500) opts.push('satellite');
+    if (score > 7000) opts.push('shootingstar', 'shootingstar'); // 별똥별은 확률 높게
+    if (opts.length) {
+      const type = opts[Math.floor(Math.random() * opts.length)];
+      const fromLeft = Math.random() < 0.5;
+      if (type === 'shootingstar') {
+        ambients.push({ type, x: rand(-20, W * 0.5), y: cameraY - 20, vx: rand(3.5, 5), vy: rand(2.5, 3.5) });
+      } else {
+        ambients.push({
+          type,
+          x: fromLeft ? -50 : W + 50,
+          y: cameraY + rand(80, 360),
+          vx: (fromLeft ? 1 : -1) * (type === 'plane' ? rand(1.6, 2.4) : rand(0.35, 0.7)),
+          vy: type === 'balloon' ? -0.15 : 0,
+        });
+      }
+    }
+  }
+  for (const a of ambients) {
+    a.x += a.vx;
+    a.y += a.vy;
+    // 별똥별은 잡으면 보너스 코인!
+    if (a.type === 'shootingstar' && Math.hypot(player.x - a.x, player.y - a.y) < 30) {
+      a.gone = true;
+      runCoins += 5;
+      wallet += 5;
+      stats.coins += 5;
+      saveWallet();
+      addFloat('별똥별! +5🪙', a.x, a.y, '#f6e58d', 17);
+      addBurst(a.x, a.y, '#f6e58d');
+      sfx.buy();
+    }
+  }
+  ambients = ambients.filter((a) => !a.gone && a.x > -80 && a.x < W + 80 && a.y < cameraY + H + 120);
+
+  // --- 고스트 기록 (내 최고 기록 궤적) ---
+  if (frame % GHOST_STEP === 0 && ghostRec.length < 24000) {
+    ghostRec.push([Math.round(player.x), Math.round(player.y)]);
+  }
+
+  // --- 연출 타이머 ---
+  if (shakeT > 0) shakeT--;
+  for (const f of floatTexts) { f.life--; if (!f.screen) f.y -= 0.4; }
+  floatTexts = floatTexts.filter((f) => f.life > 0);
+
+  // --- 튜토리얼: 첫 미션 안내 ---
+  if (tut && mission && !tut.mission) {
+    tut.mission = true;
+    addFloat('미션을 완수하면 보너스 타임! 🎯', W / 2, 190, '#6c3fb5', 16, true);
+  }
+
   // --- 몬스터 ---
   for (const m of monsters) {
     if (m.dead) continue;
     m.x += m.vx;
     m.wobble += 0.1;
+    if (m.kind === 'ufo') m.y = m.baseY + Math.sin(m.wobble * 0.8) * 18; // UFO는 위아래로 흔들림
     if (m.x < 20 || m.x > W - 20) m.vx *= -1;
 
     // 플레이어 충돌 (무적 중엔 통과)
@@ -674,14 +947,25 @@ function update() {
     const dy = player.y - m.y;
     if (dx < (player.w + m.w) / 2 - 8 && Math.abs(dy) < (player.h + m.h) / 2 - 6) {
       if (player.vy > 0 && dy < -4) {
-        // 위에서 밟으면 처치
-        m.dead = true;
-        player.vy = JUMP_VY;
-        sfx.hit();
-        addBurst(m.x, m.y, '#9b59b6');
-        missionEvent('Kill');
+        // 위에서 밟으면: 벌레는 처치, UFO는 밟고 튕기기만
+        if (m.kind === 'ufo') {
+          player.vy = JUMP_VY;
+          sfx.jump();
+          addBurst(m.x, m.y - m.h / 2, '#95afc0');
+        } else {
+          m.dead = true;
+          player.vy = JUMP_VY;
+          sfx.hit();
+          vib(40);
+          addBurst(m.x, m.y, '#9b59b6');
+          missionEvent('Kill');
+          stats.kills++;
+          saveStats();
+          checkAchievements();
+        }
       } else {
         m.dead = true; // 부활 직후 같은 몬스터에 또 죽지 않게 제거
+        shakeT = 16;
         addBurst(m.x, m.y, '#9b59b6');
         if (!tryRevive()) return;
       }
@@ -694,11 +978,20 @@ function update() {
     for (const m of monsters) {
       if (m.dead) continue;
       if (Math.abs(b.x - m.x) < m.w / 2 && Math.abs(b.y - m.y) < m.h / 2) {
-        m.dead = true;
         b.y = -9999;
-        sfx.hit();
-        addBurst(m.x, m.y, '#9b59b6');
-        missionEvent('Kill');
+        m.hp = (m.hp || 1) - 1;
+        if (m.hp <= 0) {
+          m.dead = true;
+          sfx.hit();
+          addBurst(m.x, m.y, m.kind === 'ufo' ? '#95afc0' : '#9b59b6');
+          missionEvent('Kill');
+          stats.kills++;
+          saveStats();
+          checkAchievements();
+        } else {
+          sfx.break();
+          addBurst(b.x, b.y, '#f5b70d');
+        }
       }
     }
   }
@@ -734,6 +1027,14 @@ function update() {
   } else if (mission.def.tick) {
     mission.def.tick(mission.s);
     if (mission.def.done(mission.s)) completeMission();
+  }
+
+  // --- 도전과제 달성 알림 (배너가 비었을 때 순서대로) ---
+  if (achToast.length && missionFlash <= 0) {
+    const a = achToast.shift();
+    missionFlash = 140;
+    flashMain = '🏆 도전과제 달성!';
+    flashSub = `${a.name} (+${a.reward}🪙)`;
   }
 
   // --- 낙사 ---
@@ -1107,6 +1408,158 @@ function drawCoin(c) {
   ctx.restore();
 }
 
+function drawAmbients() {
+  for (const a of ambients) {
+    const y = a.y - cameraY;
+    if (y < -60 || y > H + 60) continue;
+    ctx.save();
+    ctx.translate(a.x, y);
+    if (a.type === 'balloon') {
+      ctx.fillStyle = '#ff7979';
+      ctx.beginPath();
+      ctx.ellipse(0, -14, 15, 18, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#f6e58d';
+      ctx.beginPath();
+      ctx.ellipse(0, -14, 6, 18, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#8d6e63';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(-8, 0); ctx.lineTo(-5, 12);
+      ctx.moveTo(8, 0); ctx.lineTo(5, 12);
+      ctx.stroke();
+      ctx.fillStyle = '#a0785a';
+      ctx.fillRect(-7, 12, 14, 9);
+    } else if (a.type === 'plane') {
+      const dir = a.vx > 0 ? 1 : -1;
+      ctx.scale(dir, 1);
+      ctx.fillStyle = '#ecf0f1';
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 22, 6.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#e74c3c';
+      ctx.beginPath();
+      ctx.moveTo(-20, -2); ctx.lineTo(-30, -12); ctx.lineTo(-22, -1);
+      ctx.fill();
+      ctx.fillStyle = '#bdc3c7';
+      ctx.beginPath();
+      ctx.moveTo(-2, 0); ctx.lineTo(-12, 12); ctx.lineTo(4, 3);
+      ctx.moveTo(0, -2); ctx.lineTo(-8, -12); ctx.lineTo(6, -3);
+      ctx.fill();
+      ctx.fillStyle = '#74b9ff';
+      for (let i = 0; i < 4; i++) {
+        ctx.beginPath();
+        ctx.arc(4 + i * 5, -1.5, 1.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (a.type === 'satellite') {
+      ctx.rotate(0.3);
+      ctx.fillStyle = '#576574';
+      ctx.fillRect(-7, -9, 14, 18);
+      ctx.fillStyle = '#3867d6';
+      ctx.fillRect(-30, -6, 19, 12);
+      ctx.fillRect(11, -6, 19, 12);
+      ctx.strokeStyle = '#8395a7';
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(-30, -6, 19, 12);
+      ctx.strokeRect(11, -6, 19, 12);
+      ctx.beginPath();
+      ctx.moveTo(0, -9); ctx.lineTo(0, -16);
+      ctx.stroke();
+    } else if (a.type === 'shootingstar') {
+      // 꼬리
+      ctx.strokeStyle = 'rgba(246, 229, 141, 0.75)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(-a.vx * 8, -a.vy * 8);
+      ctx.stroke();
+      ctx.shadowColor = 'rgba(255, 230, 100, 0.95)';
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = '#fff7cf';
+      ctx.beginPath();
+      ctx.arc(0, 0, 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
+function drawBlackhole(bh) {
+  const y = bh.y - cameraY;
+  if (y < -60 || y > H + 60) return;
+  ctx.save();
+  ctx.translate(bh.x, y);
+  const g = ctx.createRadialGradient(0, 0, 2, 0, 0, bh.r * 2);
+  g.addColorStop(0, 'rgba(10, 5, 25, 1)');
+  g.addColorStop(0.45, 'rgba(50, 25, 95, 0.85)');
+  g.addColorStop(0.8, 'rgba(108, 92, 231, 0.25)');
+  g.addColorStop(1, 'rgba(108, 92, 231, 0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(0, 0, bh.r * 2, 0, Math.PI * 2);
+  ctx.fill();
+  // 소용돌이 팔
+  ctx.rotate(bh.spin);
+  ctx.strokeStyle = 'rgba(190, 170, 255, 0.55)';
+  ctx.lineWidth = 2;
+  for (let arm = 0; arm < 3; arm++) {
+    ctx.beginPath();
+    for (let t = 0; t < 1; t += 0.08) {
+      const a2 = arm * (Math.PI * 2 / 3) + t * 3.2;
+      const r2 = 4 + t * bh.r * 1.4;
+      const px2 = Math.cos(a2) * r2, py2 = Math.sin(a2) * r2;
+      if (t === 0) ctx.moveTo(px2, py2); else ctx.lineTo(px2, py2);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawDizzyCloud(dc) {
+  const y = dc.y - cameraY;
+  if (y < -50 || y > H + 50) return;
+  ctx.save();
+  ctx.translate(dc.x, y);
+  ctx.globalAlpha = dc.used ? 0.35 : 0.9;
+  ctx.fillStyle = '#b39ddb';
+  ctx.beginPath();
+  ctx.arc(-22, 2, 13, 0, Math.PI * 2);
+  ctx.arc(0, -4, 17, 0, Math.PI * 2);
+  ctx.arc(22, 2, 13, 0, Math.PI * 2);
+  ctx.arc(0, 6, 15, 0, Math.PI * 2);
+  ctx.fill();
+  if (!dc.used) {
+    ctx.fillStyle = '#5f3dc4';
+    ctx.font = '900 15px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('@', 0, 0);
+  }
+  ctx.restore();
+}
+
+function drawGhost() {
+  if (!ghostPts || state !== State.PLAYING) return;
+  const i = Math.floor(frame / GHOST_STEP);
+  if (i >= ghostPts.length) return;
+  const [gx, gy] = ghostPts[i];
+  const sy = gy - cameraY;
+  if (sy < -40 || sy > H + 40) return;
+  const img = charImgs.left;
+  if (!img) return;
+  ctx.save();
+  ctx.globalAlpha = 0.30;
+  ctx.drawImage(img, gx - 23, sy - 23, 46, 46);
+  ctx.globalAlpha = 0.5;
+  ctx.font = '700 10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#2c3e50';
+  ctx.fillText('👻 최고기록', gx, sy - 30);
+  ctx.restore();
+}
+
 function drawPlayer() {
   const x = player.x, y = player.y - cameraY;
   ctx.save();
@@ -1142,10 +1595,46 @@ function drawPlayer() {
   if (img) {
     if (flip) ctx.scale(-1, 1);
     ctx.drawImage(img, -player.w / 2, -player.h / 2, player.w, player.h);
+    drawAccessories();
   } else {
     drawDefaultCharacter();
   }
   ctx.restore();
+}
+
+// 구매한 액세서리 (사이드뷰 머리 위치 기준, 좌우반전은 ctx가 처리)
+function drawAccessories() {
+  const hx = -9, hy = -14; // 머리 대략 위치
+  if (equip.hat && inv.hat) {
+    ctx.fillStyle = '#e74c3c';
+    ctx.beginPath();
+    ctx.arc(hx, hy - 5, 8, Math.PI, 0);
+    ctx.fill();
+    ctx.fillRect(hx - 8, hy - 6, 16, 3);
+    ctx.fillStyle = '#c0392b';
+    ctx.fillRect(hx - 15, hy - 5, 9, 2.6); // 챙 (보는 방향 쪽)
+  }
+  if (equip.glasses && inv.glasses) {
+    ctx.fillStyle = 'rgba(30,30,40,0.9)';
+    ctx.beginPath();
+    ctx.arc(hx - 7, hy + 6, 4, 0, Math.PI * 2);
+    ctx.arc(hx + 3, hy + 6, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(30,30,40,0.9)';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(hx - 3, hy + 6);
+    ctx.lineTo(hx - 1, hy + 6);
+    ctx.moveTo(hx + 7, hy + 5);
+    ctx.lineTo(hx + 13, hy + 3);
+    ctx.stroke();
+  }
+  if (equip.scarf && inv.scarf) {
+    ctx.fillStyle = '#e67e22';
+    roundRect(-8, 1, 13, 5, 2.5);
+    ctx.fillStyle = '#d35400';
+    roundRect(-3, 5, 5, 9, 2.5); // 늘어진 자락
+  }
 }
 
 // 내장 임시 캐릭터: 동글동글한 초록 캐릭터
@@ -1187,6 +1676,10 @@ function drawDefaultCharacter() {
 
 function drawMonster(m) {
   const y = m.y - cameraY + Math.sin(m.wobble) * 3;
+  if (m.kind === 'ufo') {
+    drawUfo(m, y);
+    return;
+  }
   ctx.save();
   ctx.translate(m.x, y);
 
@@ -1282,12 +1775,102 @@ function drawMonster(m) {
   ctx.restore();
 }
 
+function drawUfo(m, y) {
+  ctx.save();
+  ctx.translate(m.x, y);
+  // 아래 광선 힌트
+  ctx.fillStyle = 'rgba(130, 220, 170, 0.14)';
+  ctx.beginPath();
+  ctx.moveTo(-10, 6);
+  ctx.lineTo(10, 6);
+  ctx.lineTo(20, 34);
+  ctx.lineTo(-20, 34);
+  ctx.fill();
+  // 유리 돔
+  const domeG = ctx.createLinearGradient(0, -18, 0, 0);
+  domeG.addColorStop(0, 'rgba(190, 235, 255, 0.95)');
+  domeG.addColorStop(1, 'rgba(120, 180, 220, 0.75)');
+  ctx.fillStyle = domeG;
+  ctx.beginPath();
+  ctx.arc(0, -3, 12, Math.PI, 0);
+  ctx.fill();
+  // 외계인 눈
+  ctx.fillStyle = '#2ecc71';
+  ctx.beginPath();
+  ctx.ellipse(0, -8, 5, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#145a32';
+  ctx.beginPath();
+  ctx.ellipse(-2, -9, 1.7, 2.4, 0, 0, Math.PI * 2);
+  ctx.ellipse(2, -9, 1.7, 2.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // 접시 본체
+  const saucerG = ctx.createLinearGradient(0, -6, 0, 10);
+  saucerG.addColorStop(0, '#c8d6e5');
+  saucerG.addColorStop(0.5, '#8395a7');
+  saucerG.addColorStop(1, '#576574');
+  ctx.fillStyle = saucerG;
+  ctx.beginPath();
+  ctx.ellipse(0, 2, m.w / 2, 10, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#3d4a56';
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+  // 반짝이는 라이트
+  for (let i = -1; i <= 1; i++) {
+    const on = Math.floor(m.wobble * 2 + i) % 3 === 0;
+    ctx.fillStyle = on ? '#f9ca24' : '#7f6a1e';
+    ctx.beginPath();
+    ctx.arc(i * 13, 4.5, 2.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // 피격 표시 (HP 1 남음)
+  if (m.hp === 1) {
+    ctx.strokeStyle = 'rgba(231, 76, 60, 0.8)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(6, -2);
+    ctx.lineTo(12, 3);
+    ctx.lineTo(8, 6);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function draw() {
   ctx.save();
   ctx.scale(scale, scale);
+  if (shakeT > 0) {
+    ctx.translate(rand(-1, 1) * Math.min(shakeT, 7), rand(-1, 1) * Math.min(shakeT, 7));
+  }
 
   drawBackground();
+  drawAmbients();
 
+  // 최고 기록 깃발 라인
+  if (best > 0) {
+    const lineY = (H * 0.4) - best - cameraY;
+    if (lineY > -20 && lineY < H + 20) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(231, 76, 60, 0.65)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 6]);
+      ctx.beginPath();
+      ctx.moveTo(0, lineY);
+      ctx.lineTo(W, lineY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.font = '800 13px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#e74c3c';
+      ctx.fillText('🚩 최고 기록', W - 10, lineY - 8);
+      ctx.restore();
+    }
+  }
+
+  drawGhost();
+  for (const bh of blackholes) drawBlackhole(bh);
+  for (const dc of dizzyClouds) drawDizzyCloud(dc);
   for (const p of platforms) drawPlatform(p);
   for (const c of coinsArr) drawCoin(c);
   for (const m of monsters) drawMonster(m);
@@ -1322,6 +1905,28 @@ function draw() {
 
   drawPlayer();
   drawWeather();
+
+  // 떠오르는 텍스트 (콤보/아슬아슬/튜토리얼)
+  for (const f of floatTexts) {
+    const fy = f.screen ? f.y : f.y - cameraY;
+    ctx.save();
+    ctx.globalAlpha = clamp(f.life / 40, 0, 1);
+    ctx.font = `900 ${f.size}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.lineWidth = 4;
+    ctx.strokeText(f.text, f.x, fy);
+    ctx.fillStyle = f.color;
+    ctx.fillText(f.text, f.x, fy);
+    ctx.restore();
+  }
+
+  // 조작 반전 상태: 보라 틴트
+  if (reversedT > 0 && state === State.PLAYING) {
+    ctx.fillStyle = `rgba(155, 89, 182, ${0.10 + 0.05 * Math.sin(frame * 0.3)})`;
+    ctx.fillRect(0, 0, W, H);
+  }
 
   // 카운트다운: 큰 숫자 표시
   if (state === State.COUNTDOWN) {
@@ -1365,6 +1970,20 @@ function draw() {
     ctx.fillText('🪙 ' + runCoins, 18, 63);
     ctx.fillStyle = '#c78a00';
     ctx.fillText(`⭐ ${starCount}/${STAR_GOAL}`, 110, 63);
+
+    // 콤보 표시 (5 이상일 때 오른쪽에)
+    if (combo >= 5) {
+      const cSize = Math.min(18 + combo * 0.3, 30);
+      ctx.save();
+      ctx.font = `900 ${cSize}px sans-serif`;
+      ctx.textAlign = 'right';
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 4;
+      ctx.strokeText(`x${combo}`, W - 14, 74);
+      ctx.fillStyle = combo >= 20 ? '#e056fd' : combo >= 10 ? '#e67e22' : '#2c3e50';
+      ctx.fillText(`x${combo}`, W - 14, 74);
+      ctx.restore();
+    }
 
     // 미션 바 (상단 전체 폭)
     if (mission) {
@@ -1460,19 +2079,110 @@ function refreshShop() {
   $('own-magnet').textContent = String(inv.magnet);
   document.querySelectorAll('.btn-buy').forEach((btn) => {
     const item = btn.dataset.item;
+    btn.classList.remove('equipped');
+    if (COSMETICS.includes(item)) {
+      // 꾸미기: 사면 착용/해제 토글로 변경
+      if (inv[item]) {
+        btn.disabled = false;
+        btn.textContent = equip[item] ? '착용 중 ✓' : '착용하기';
+        btn.classList.toggle('equipped', equip[item]);
+      } else {
+        btn.disabled = wallet < PRICES[item];
+        btn.textContent = `🪙 ${PRICES[item]}`;
+      }
+      return;
+    }
     btn.disabled = wallet < PRICES[item] || inv[item] >= MAX_OWN[item];
     btn.textContent = inv[item] >= MAX_OWN[item] ? '최대 보유' : `🪙 ${PRICES[item]}`;
   });
 }
 
 function buyItem(item) {
+  if (COSMETICS.includes(item) && inv[item]) {
+    // 이미 보유: 착용 토글
+    equip[item] = !equip[item];
+    saveEquip();
+    sfx.buy();
+    refreshShop();
+    return;
+  }
   if (wallet < PRICES[item] || inv[item] >= MAX_OWN[item]) return;
   wallet -= PRICES[item];
   inv[item]++;
+  if (COSMETICS.includes(item)) { equip[item] = true; saveEquip(); }
   saveWallet();
   saveInv();
   sfx.buy();
   refreshShop();
+}
+
+// ---------- 도전과제 화면 ----------
+function renderAchievements() {
+  const list = $('ach-list');
+  list.innerHTML = '';
+  for (const a of ACHIEVEMENTS) {
+    const done = unlockedAch.has(a.id);
+    const cur = Math.min(a.get(stats), a.target);
+    const el = document.createElement('div');
+    el.className = 'ach-item' + (done ? ' done' : '');
+    el.innerHTML = `
+      <div class="ach-top">
+        <span class="ach-name">${done ? '✅ ' : ''}${a.name}</span>
+        <span class="ach-reward">🪙 ${a.reward}</span>
+      </div>
+      <div class="ach-desc">${a.desc}</div>
+      <div class="ach-bar"><div style="width:${Math.round((cur / a.target) * 100)}%"></div></div>
+      <div class="ach-prog">${cur.toLocaleString()} / ${a.target.toLocaleString()}</div>`;
+    list.appendChild(el);
+  }
+}
+
+// ---------- 기록 공유 ----------
+async function shareResult() {
+  const c = document.createElement('canvas');
+  c.width = 540;
+  c.height = 720;
+  const sc = c.getContext('2d');
+  const g = sc.createLinearGradient(0, 0, 0, 720);
+  g.addColorStop(0, '#87CEEB');
+  g.addColorStop(1, '#b0e0c6');
+  sc.fillStyle = g;
+  sc.fillRect(0, 0, 540, 720);
+  sc.fillStyle = 'rgba(255,255,255,0.85)';
+  sc.beginPath();
+  sc.roundRect(40, 60, 460, 600, 28);
+  sc.fill();
+  sc.textAlign = 'center';
+  sc.fillStyle = '#2c3e50';
+  sc.font = '900 52px sans-serif';
+  sc.fillText('점프! 점프!', 270, 150);
+  if (charImgs.left) sc.drawImage(charImgs.left, 190, 190, 160, 160);
+  sc.font = '800 26px sans-serif';
+  sc.fillStyle = '#57606f';
+  sc.fillText('둥이의 기록', 270, 410);
+  sc.font = '900 72px sans-serif';
+  sc.fillStyle = '#e67e22';
+  sc.fillText(String(score), 270, 490);
+  sc.font = '700 22px sans-serif';
+  sc.fillStyle = '#8e44ad';
+  sc.fillText(`최고 기록 ${best}`, 270, 535);
+  sc.font = '700 18px sans-serif';
+  sc.fillStyle = '#57606f';
+  sc.fillText('jiuk96.github.io/jump-jump', 270, 620);
+
+  const blob = await new Promise((res) => c.toBlob(res, 'image/png'));
+  const file = new File([blob], 'jump-jump-score.png', { type: 'image/png' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: '점프! 점프!', text: `둥이와 함께 ${score}점 달성! 🐶` });
+      return;
+    } catch (e) { /* 사용자가 취소하면 다운로드로 대체하지 않음 */ return; }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'jump-jump-score.png';
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 function startGame() {
@@ -1494,7 +2204,10 @@ function beginCountdown() {
   pauseScreen.classList.add('hidden');
   shopScreen.classList.add('hidden');
   helpScreen.classList.add('hidden');
+  $('ach-screen').classList.add('hidden');
   pauseBtn.classList.remove('hidden');
+  bgm.start();
+  if (tut) addFloat('좌우로 움직여 발판을 밟아요!', W / 2, 190, '#2c3e50', 16, true);
 }
 
 function showHelp() {
@@ -1505,11 +2218,13 @@ function showHelp() {
 function pauseGame() {
   if (state !== State.PLAYING) return;
   state = State.PAUSED;
+  bgm.stop();
   pauseScreen.classList.remove('hidden');
 }
 
 function resumeGame() {
   state = State.PLAYING;
+  bgm.start();
   pauseScreen.classList.add('hidden');
 }
 
@@ -1517,11 +2232,24 @@ function gameOver() {
   if (state !== State.PLAYING) return;
   state = State.OVER;
   sfx.die();
+  vib(160);
+  bgm.stop();
   const isRecord = score > best;
   if (isRecord) {
     best = score;
     localStorage.setItem('jump-best', String(best));
+    // 최고 기록 고스트 저장
+    try {
+      localStorage.setItem('jump-ghost', JSON.stringify({ step: GHOST_STEP, pts: ghostRec }));
+    } catch (e) { /* 저장 공간 부족 시 무시 */ }
   }
+  if (tut) localStorage.setItem('jump-tut-done', '1');
+  stats.runs++;
+  stats.totalScore += score;
+  if (score > stats.bestScore) stats.bestScore = score;
+  if (score >= 14000) stats.space = true;
+  saveStats();
+  checkAchievements();
   $('final-score').textContent = String(score);
   $('final-coins').textContent = String(runCoins);
   $('final-best').textContent = `최고 기록 ${best}`;
@@ -1532,9 +2260,11 @@ function gameOver() {
 
 function goHome() {
   state = State.MENU;
+  bgm.stop();
   overScreen.classList.add('hidden');
   pauseScreen.classList.add('hidden');
   helpScreen.classList.add('hidden');
+  $('ach-screen').classList.add('hidden');
   pauseBtn.classList.add('hidden');
   startScreen.classList.remove('hidden');
   refreshMenu();
@@ -1570,6 +2300,22 @@ $('btn-shop-back').addEventListener('click', () => {
 document.querySelectorAll('.btn-buy').forEach((btn) => {
   btn.addEventListener('click', () => buyItem(btn.dataset.item));
 });
+$('btn-ach').addEventListener('click', () => {
+  startScreen.classList.add('hidden');
+  renderAchievements();
+  $('ach-screen').classList.remove('hidden');
+});
+$('btn-ach-back').addEventListener('click', goHome);
+$('btn-share').addEventListener('click', shareResult);
+
+function refreshBgmBtn() {
+  $('btn-bgm').textContent = bgm.on ? '🔊 음악 켜짐' : '🔇 음악 꺼짐';
+}
+$('btn-bgm').addEventListener('click', () => {
+  bgm.toggle();
+  refreshBgmBtn();
+});
+refreshBgmBtn();
 
 // 탭 전환 시 자동 일시정지
 document.addEventListener('visibilitychange', () => {
