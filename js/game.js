@@ -601,9 +601,11 @@ canvas.addEventListener('touchend', (e) => {
 }, { passive: false });
 
 // 기울기 (모바일) — 기울이기 모드에서만 반영
+// 감도를 낮추고(-25°에서 최대) 목표값을 부드럽게 따라가 급격한 움직임 방지
+let tiltTarget = 0;
 window.addEventListener('deviceorientation', (e) => {
-  if (controlMode !== 'tilt') { input.tilt = 0; return; }
-  if (e.gamma != null) input.tilt = clamp(e.gamma / 15, -1, 1);
+  if (controlMode !== 'tilt') { tiltTarget = 0; input.tilt = 0; return; }
+  if (e.gamma != null) tiltTarget = clamp(e.gamma / 25, -1, 1);
 });
 
 // iOS 13+ 은 사용자 제스처에서 권한 요청 필요
@@ -818,12 +820,16 @@ function update() {
   // --- 좌우 이동 (어지러움 구름에 닿으면 잠시 반전!) ---
   if (reversedT > 0) reversedT--;
   const rev = reversedT > 0 ? -1 : 1;
+  // 기울기는 목표값을 천천히 따라감 (부드럽고 과민하지 않게)
+  input.tilt += (tiltTarget - input.tilt) * 0.12;
   let ax = 0;
   if (input.left) ax -= MOVE_ACC;
   if (input.right) ax += MOVE_ACC;
-  ax += input.tilt * MOVE_ACC * 1.6;
+  ax += input.tilt * MOVE_ACC * 1.05;
   ax *= rev;
-  player.vx = clamp((player.vx + ax) * (ax === 0 ? MOVE_FRICTION : 1), -MOVE_MAX, MOVE_MAX);
+  // 기울이기 모드는 최고 속도도 살짝 낮게
+  const maxV = controlMode === 'tilt' ? MOVE_MAX * 0.8 : MOVE_MAX;
+  player.vx = clamp((player.vx + ax) * (ax === 0 ? MOVE_FRICTION : 1), -maxV, maxV);
   player.x += player.vx;
   if (Math.abs(player.vx) > 0.3) player.facing = player.vx < 0 ? 'left' : 'right';
 
