@@ -167,6 +167,9 @@ html, body {
   flex-direction: column;
   gap: 12px;
   width: min(92%, 380px);
+  max-height: 52dvh;
+  overflow-y: auto;
+  padding: 4px;
 }
 
 .shop-item {
