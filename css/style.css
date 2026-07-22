@@ -224,3 +224,85 @@ html, body {
   box-shadow: 0 3px 0 #95a5a6;
   cursor: default;
 }
+
+/* ---------- 게임 방법 ---------- */
+.btn-row {
+  display: flex;
+  gap: 10px;
+}
+
+.help-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: min(92%, 380px);
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 16px;
+  padding: 14px 16px;
+}
+
+.help-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 32px;
+}
+
+.help-row p {
+  font-size: clamp(12px, 3.4vw, 15px);
+  color: #2c3e50;
+  text-align: left;
+  line-height: 1.35;
+}
+
+.blk {
+  flex-shrink: 0;
+  width: 54px;
+  height: 13px;
+  border-radius: 7px;
+  position: relative;
+}
+
+.blk.normal, .blk.spring, .blk.jetpack {
+  background: linear-gradient(#2ecc71, #27ae60);
+}
+
+.blk.moving { background: linear-gradient(#3498db, #2980b9); }
+
+.blk.oneshot {
+  background: linear-gradient(#ffffff, #dcdde1);
+  border: 1px solid #bdc3c7;
+}
+
+.blk.breaking { background: linear-gradient(#a0693a, #8B5A2B); }
+
+.blk.spring::after {
+  content: '';
+  position: absolute;
+  top: -9px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 16px;
+  height: 9px;
+  background: #e74c3c;
+  border-radius: 2px 2px 0 0;
+}
+
+.blk.jetpack::after {
+  content: '';
+  position: absolute;
+  top: -16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 14px;
+  height: 15px;
+  background: #f39c12;
+  border-radius: 4px;
+}
+
+.help-row .emoji {
+  flex-shrink: 0;
+  width: 54px;
+  font-size: 22px;
+  text-align: center;
+}

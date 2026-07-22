@@ -121,8 +121,9 @@ function saveWallet() { localStorage.setItem('jump-coins', String(wallet)); }
 function saveInv() { localStorage.setItem('jump-inv', JSON.stringify(inv)); }
 
 // ---------- 게임 상태 ----------
-const State = { MENU: 0, PLAYING: 1, PAUSED: 2, OVER: 3 };
+const State = { MENU: 0, PLAYING: 1, PAUSED: 2, OVER: 3, COUNTDOWN: 4 };
 let state = State.MENU;
+let countdownUntil = 0; // 카운트다운 종료 시각 (performance.now 기준)
 
 let player, platforms, monsters, bullets, particles, coinsArr;
 let cameraY;          // 월드 기준 카메라 상단 y
@@ -214,7 +215,7 @@ function newGame() {
   // 들고 들어가는 아이템: 생명은 보유분 그대로, 로켓/자석은 있으면 1개 자동 사용
   lives = inv.life;
   magnetActive = false;
-  if (state === State.PLAYING) { // 메뉴 배경용 초기화 때는 소비하지 않음
+  if (state === State.COUNTDOWN) { // 메뉴 배경용 초기화 때는 소비하지 않음
     if (inv.rocket > 0) {
       inv.rocket--;
       jetpackTimer = JETPACK_TIME;
@@ -252,16 +253,16 @@ function difficulty() {
 
 function spawnPlatformRow() {
   const d = difficulty();
-  // 초반엔 촘촘하게(38~58), 후반엔 성기게(최대 88~120)
-  const gap = rand(38 + d * 50, 58 + d * 62);
+  // 초반엔 아주 촘촘하게(30~44), 후반엔 성기게(최대 88~120)
+  const gap = rand(30 + d * 58, 44 + d * 76);
   const y = highestPlatY - gap;
   const x = rand(0, W - PLAT_W);
 
-  // 특수 발판 비율: 초반 10% → 후반 45%
+  // 특수 발판 비율: 초반 6% → 후반 45%
   let type = PlatType.NORMAL;
   const r = Math.random();
-  if (r < 0.05 + d * 0.22) type = PlatType.MOVING;
-  else if (r < 0.10 + d * 0.35) type = PlatType.ONESHOT;
+  if (r < 0.03 + d * 0.24) type = PlatType.MOVING;
+  else if (r < 0.06 + d * 0.39) type = PlatType.ONESHOT;
 
   const p = makePlatform(x, y, type);
 
@@ -764,8 +765,34 @@ function draw() {
 
   drawPlayer();
 
+  // 카운트다운: 큰 숫자 표시
+  if (state === State.COUNTDOWN) {
+    const remain = countdownUntil - performance.now();
+    const n = Math.max(1, Math.ceil(remain / 1000));
+    const frac = (remain % 1000) / 1000; // 1 → 0
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.save();
+    ctx.translate(W / 2, H / 2 - 40);
+    ctx.scale(1 + (1 - frac) * 0.4, 1 + (1 - frac) * 0.4);
+    ctx.fillStyle = '#fff';
+    ctx.strokeStyle = '#2c3e50';
+    ctx.lineWidth = 3;
+    ctx.font = '900 90px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.globalAlpha = 0.4 + frac * 0.6;
+    ctx.strokeText(String(n), 0, 0);
+    ctx.fillText(String(n), 0, 0);
+    ctx.restore();
+    ctx.font = '800 22px sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.fillText('준비하세요!', W / 2, H / 2 + 40);
+  }
+
   // HUD: 점수 / 코인 / 생명
-  if (state === State.PLAYING || state === State.PAUSED) {
+  if (state === State.PLAYING || state === State.PAUSED || state === State.COUNTDOWN) {
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
     roundRect(8, 8, 110, 34, 17);
     roundRect(8, 48, 86, 28, 14);
@@ -789,6 +816,9 @@ function draw() {
 // ---------- 루프 ----------
 let rafId = null;
 function loop() {
+  if (state === State.COUNTDOWN && performance.now() >= countdownUntil) {
+    state = State.PLAYING;
+  }
   if (state === State.PLAYING) update();
   draw();
   rafId = requestAnimationFrame(loop);
@@ -800,6 +830,7 @@ const startScreen = $('start-screen');
 const overScreen = $('gameover-screen');
 const pauseScreen = $('pause-screen');
 const shopScreen = $('shop-screen');
+const helpScreen = $('help-screen');
 const pauseBtn = $('btn-pause');
 
 function refreshMenu() {
@@ -830,17 +861,34 @@ function buyItem(item) {
 }
 
 function startGame() {
+  // 처음 하는 사람에게는 게임 방법을 먼저 보여줌
+  if (!localStorage.getItem('jump-help-seen')) {
+    showHelp();
+    return;
+  }
+  beginCountdown();
+}
+
+function beginCountdown() {
   requestTilt();
-  state = State.PLAYING; // newGame이 아이템을 소비하도록 먼저 상태 변경
+  state = State.COUNTDOWN; // newGame이 아이템을 소비하도록 먼저 상태 변경
   newGame();
+  countdownUntil = performance.now() + 3000;
   startScreen.classList.add('hidden');
   overScreen.classList.add('hidden');
   pauseScreen.classList.add('hidden');
   shopScreen.classList.add('hidden');
+  helpScreen.classList.add('hidden');
   pauseBtn.classList.remove('hidden');
 }
 
+function showHelp() {
+  startScreen.classList.add('hidden');
+  helpScreen.classList.remove('hidden');
+}
+
 function pauseGame() {
+  if (state !== State.PLAYING) return;
   state = State.PAUSED;
   pauseScreen.classList.remove('hidden');
 }
@@ -871,13 +919,23 @@ function goHome() {
   state = State.MENU;
   overScreen.classList.add('hidden');
   pauseScreen.classList.add('hidden');
+  helpScreen.classList.add('hidden');
   pauseBtn.classList.add('hidden');
   startScreen.classList.remove('hidden');
   refreshMenu();
 }
 
 $('btn-start').addEventListener('click', startGame);
-$('btn-retry').addEventListener('click', startGame);
+$('btn-retry').addEventListener('click', beginCountdown);
+$('btn-help').addEventListener('click', showHelp);
+$('btn-help-start').addEventListener('click', () => {
+  localStorage.setItem('jump-help-seen', '1');
+  beginCountdown();
+});
+$('btn-help-back').addEventListener('click', () => {
+  localStorage.setItem('jump-help-seen', '1');
+  goHome();
+});
 $('btn-home').addEventListener('click', goHome);
 $('btn-resume').addEventListener('click', resumeGame);
 $('btn-quit').addEventListener('click', goHome);
