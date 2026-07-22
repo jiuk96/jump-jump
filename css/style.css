@@ -502,3 +502,7 @@ html, body {
   color: #27ae60;
   min-height: 1.2em;
 }
+
+.blk.ice {
+  background: linear-gradient(#eafafd, #aee6f2 50%, #6fc7de);
+}

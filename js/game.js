@@ -50,6 +50,7 @@ const PlatType = {
   MOVING: 'moving',     // 파랑: 좌우 이동
   BREAKING: 'breaking', // 갈색: 밟으면 부서짐 (점프 불가)
   ONESHOT: 'oneshot',   // 흰색: 한 번 밟으면 사라짐
+  ICE: 'ice',           // 하늘색: 밟으면 잠시 미끄러움 (눈 올 때 자주)
 };
 
 // ---------- 유틸 ----------
@@ -547,6 +548,12 @@ let ghostPts = null;   // 최고 기록 고스트 궤적
 let ghostRec;          // 이번 판 기록
 const GHOST_STEP = 3;  // 몇 프레임마다 기록할지
 let tut;               // 첫 판 튜토리얼 안내 플래그
+let slipT;             // 얼음 발판 미끄러움 남은 프레임
+let windState;         // null 또는 { dir, warnT, t } — 바람 지대
+let windWait;          // 다음 바람까지 프레임
+let cannons;           // 대포 [{x,y,ang,osc,fired,timer}]
+let holdCannon;        // 현재 들어가 있는 대포
+let spaceAnnounced;    // 무중력 안내 1회 표시
 
 function addFloat(text, x, y, color = '#e67e22', size = 16, screen = false) {
   floatTexts.push({ text, x, y, color, size, life: 110, screen });
@@ -577,6 +584,10 @@ let touchSide = null;
 canvas.addEventListener('touchstart', (e) => {
   e.preventDefault();
   if (state !== State.PLAYING) return;
+  if (holdCannon) { // 대포 안: 아무 곳이나 탭하면 발사
+    shoot();
+    return;
+  }
   if (controlMode === 'tilt') {
     shoot();
     return;
@@ -670,6 +681,14 @@ function newGame() {
     ? null
     : { move: false, spring: false, coin: false, star: false, mission: false };
 
+  // 얼음/바람/대포/무중력 초기화
+  slipT = 0;
+  windState = null;
+  windWait = Math.round(rand(700, 1600));
+  cannons = [];
+  holdCannon = null;
+  spaceAnnounced = false;
+
   // 들고 들어가는 아이템: 생명은 보유분 그대로, 로켓/자석은 있으면 1개 자동 사용
   lives = inv.life;
   magnetActive = false;
@@ -728,6 +747,11 @@ function spawnPlatformRow() {
   const r = Math.random();
   if (r < 0.03 + d * 0.24) type = PlatType.MOVING;
   else if (r < 0.06 + d * 0.39) type = PlatType.ONESHOT;
+  // 얼음 발판: 평소 드물게, 눈 올 때는 자주
+  if (type === PlatType.NORMAL) {
+    const iceChance = 0.03 + d * 0.05 + (weather && weather.type === 'snow' ? 0.25 : 0);
+    if (Math.random() < iceChance) type = PlatType.ICE;
+  }
 
   const p = makePlatform(x, y, type);
   p.x = rand(0, W - p.w);
@@ -774,15 +798,41 @@ function spawnPlatformRow() {
     dizzyClouds.push({ x: rand(50, W - 50), y: y - rand(30, 70), w: 74, h: 36, used: false });
   }
 
+  // 대포: 1200점부터 드물게 (떨어져서 들어가면 조준 발사!)
+  if (score > 1200 && Math.random() < 0.009 + d * 0.008) {
+    cannons.push({ x: rand(45, W - 45), y: y - rand(20, 50), ang: 0, osc: rand(0, Math.PI * 2), fired: false, timer: 0 });
+  }
+
   highestPlatY = y;
 }
 
 // ---------- 발사 ----------
 function shoot() {
+  if (holdCannon) { // 대포 안이면 탄환 대신 대포 발사!
+    fireCannon();
+    return;
+  }
   bullets.push({ x: player.x, y: player.y - player.h / 2, vy: BULLET_VY });
   shootPose = 20;
   sfx.shoot();
   missionEvent('Shoot');
+}
+
+// ---------- 대포 발사 ----------
+function fireCannon() {
+  if (!holdCannon) return;
+  const cn = holdCannon;
+  holdCannon = null;
+  cn.fired = true;
+  const v = 18;
+  player.vx = Math.sin(cn.ang) * v;
+  player.vy = -Math.cos(cn.ang) * v * 1.15;
+  invincible = Math.max(invincible, 30);
+  shakeT = 10;
+  beep(90, 0.35, 'sawtooth', 0.25); // 발사음
+  vib(70);
+  addBurst(cn.x, cn.y - 10, '#e67e22');
+  addBurst(cn.x, cn.y - 10, '#f6e58d');
 }
 
 // ---------- 죽음 처리: 생명이 있으면 부활 ----------
@@ -817,6 +867,18 @@ function update() {
   frame++;
   if (invincible > 0) invincible--;
 
+  // --- 대포 안에 있을 때: 조준만 하고 물리 정지 ---
+  if (holdCannon) {
+    holdCannon.osc += 0.05;
+    holdCannon.ang = Math.sin(holdCannon.osc) * 0.9; // ±51°로 왕복 조준
+    player.x = holdCannon.x;
+    player.y = holdCannon.y - 6;
+    player.vx = 0;
+    player.vy = 0;
+    invincible = Math.max(invincible, 3);
+    if (--holdCannon.timer <= 0) fireCannon(); // 2초 내 입력 없으면 자동 발사
+  }
+
   // --- 좌우 이동 (어지러움 구름에 닿으면 잠시 반전!) ---
   if (reversedT > 0) reversedT--;
   const rev = reversedT > 0 ? -1 : 1;
@@ -827,18 +889,34 @@ function update() {
   if (input.right) ax += MOVE_ACC;
   ax += input.tilt * MOVE_ACC * 1.05;
   ax *= rev;
+  // 바람 지대: 옆에서 밀어냄
+  if (windState && windState.warnT <= 0 && !holdCannon) {
+    player.vx += windState.dir * 0.055;
+  }
   // 기울이기 모드는 최고 속도도 살짝 낮게
   const maxV = controlMode === 'tilt' ? MOVE_MAX * 0.8 : MOVE_MAX;
-  player.vx = clamp((player.vx + ax) * (ax === 0 ? MOVE_FRICTION : 1), -maxV, maxV);
-  player.x += player.vx;
+  // 얼음 위를 밟은 직후엔 잘 안 멈춤
+  if (slipT > 0) slipT--;
+  const friction = slipT > 0 ? 0.995 : MOVE_FRICTION;
+  if (!holdCannon) {
+    player.vx = clamp((player.vx + ax) * (ax === 0 ? friction : 1), -maxV, maxV);
+    player.x += player.vx;
+  }
   if (Math.abs(player.vx) > 0.3) player.facing = player.vx < 0 ? 'left' : 'right';
 
   // 화면 좌우 랩어라운드
   if (player.x < -player.w / 2) player.x = W + player.w / 2;
   if (player.x > W + player.w / 2) player.x = -player.w / 2;
 
-  // --- 중력/제트팩 ---
-  if (jetpackTimer > 0) {
+  // --- 중력/제트팩 (우주에선 무중력에 가깝게 둥실둥실) ---
+  const gravity = score > 13500 ? GRAVITY * 0.55 : GRAVITY;
+  if (score > 13500 && !spaceAnnounced) {
+    spaceAnnounced = true;
+    addFloat('🌌 무중력 구간! 둥실둥실~', W / 2, 190, '#dfe6e9', 17, true);
+  }
+  if (holdCannon) {
+    // 대포 안: 중력 없음
+  } else if (jetpackTimer > 0) {
     jetpackTimer--;
     player.vy = JETPACK_VY;
     if (frame % 3 === 0) {
@@ -848,9 +926,9 @@ function update() {
       });
     }
   } else {
-    player.vy += GRAVITY;
+    player.vy += gravity;
   }
-  player.y += player.vy;
+  if (!holdCannon) player.y += player.vy;
 
   // --- 발판 충돌 (하강 중일 때만) ---
   if (player.vy > 0 && jetpackTimer <= 0) {
@@ -877,6 +955,12 @@ function update() {
         } else {
           player.vy = JUMP_VY;
           sfx.jump();
+        }
+        // 얼음 발판: 잠시 미끄러움
+        if (p.type === PlatType.ICE) {
+          slipT = 55;
+          beep(1500, 0.08, 'triangle', 0.1);
+          if (frame - lastCloseCall > 120) addFloat('미끌미끌~', player.x, player.y - 40, '#48c9e5', 14);
         }
         if (p.type === PlatType.ONESHOT) p.broken = true;
         // 미션 훅: 처음 밟는 발판인지 + 스프링 여부
@@ -934,13 +1018,14 @@ function update() {
   // --- 하늘에서 떨어지는 코인/별 ---
   if (--pickupTimer <= 0) {
     pickupTimer = Math.round(rand(35, 75));
-    const isStar = Math.random() < 0.16;
+    const roll = Math.random();
+    const type = roll < 0.16 ? 'star' : roll < 0.23 ? 'rainbow' : 'coin';
     coinsArr.push({
       x: rand(20, W - 20), y: cameraY - 30,
       vy: rand(1.0, 2.1),
       swayPhase: rand(0, Math.PI * 2),
       spin: rand(0, Math.PI * 2),
-      type: isStar ? 'star' : 'coin',
+      type,
     });
   }
   for (const c of coinsArr) {
@@ -968,6 +1053,15 @@ function update() {
           addFloat('별 10개를 모으면 스타 파워! ⭐', W / 2, 190, '#c78a00', 16, true);
         }
         if (starCount >= STAR_GOAL) starPower();
+      } else if (c.type === 'rainbow') {
+        runCoins += 5;
+        wallet += 5;
+        stats.coins += 5;
+        saveWallet();
+        sfx.buy();
+        addFloat('+5🪙', c.x, c.y - 14, '#e056fd', 15);
+        addBurst(c.x, c.y, '#e056fd');
+        missionEvent('Coin');
       } else {
         runCoins++;
         wallet++;
@@ -1019,6 +1113,41 @@ function update() {
     }
   }
   dizzyClouds = dizzyClouds.filter((d) => d.y < cameraY + H + 60);
+
+  // --- 대포: 떨어지다 닿으면 들어감 ---
+  for (const cn of cannons) {
+    if (!cn.fired && holdCannon !== cn) cn.osc += 0.02; // 대기 중에도 살짝 흔들
+  }
+  if (!holdCannon) {
+    for (const cn of cannons) {
+      if (cn.fired) continue;
+      if (player.vy > 0 && Math.hypot(player.x - cn.x, player.y - cn.y) < 28) {
+        holdCannon = cn;
+        cn.timer = 130; // 약 2초 뒤 자동 발사
+        combo = 0;
+        sfx.break();
+        vib(40);
+        addFloat('탭해서 발사! 🎯', cn.x, cn.y - 46, '#e67e22', 16);
+        break;
+      }
+    }
+  }
+  cannons = cannons.filter((c) => c.y < cameraY + H + 60);
+
+  // --- 바람 지대 (2500~13500점 구간) ---
+  if (windState) {
+    if (windState.warnT > 0) windState.warnT--;
+    else windState.t--;
+    if (windState.t <= 0) {
+      windState = null;
+      windWait = Math.round(rand(900, 2000));
+    }
+  } else if (score > 2500 && score < 13500) {
+    if (--windWait <= 0) {
+      windState = { dir: Math.random() < 0.5 ? -1 : 1, warnT: 90, t: 430 };
+      sfx.break();
+    }
+  }
 
   // --- 배경 오브젝트 (비행기/열기구/위성/별똥별) ---
   if (--ambientTimer <= 0 && ambients.length < 2) {
@@ -1380,6 +1509,33 @@ function drawPlatform(p) {
     ctx.lineTo(ax, y + 7);
     ctx.lineTo(ax - dir * 4, y + 10);
     ctx.stroke();
+  } else if (p.type === PlatType.ICE) {
+    // 얼음 발판: 반투명 하늘색 + 광택 + 고드름
+    const g = ctx.createLinearGradient(0, y, 0, y + p.h);
+    g.addColorStop(0, '#eafafd');
+    g.addColorStop(0.5, '#aee6f2');
+    g.addColorStop(1, '#6fc7de');
+    ctx.fillStyle = g;
+    roundRect(p.x, y, p.w, p.h, 7);
+    // 광택 줄
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(p.x + 6, y + 4);
+    ctx.lineTo(p.x + p.w * 0.4, y + 4);
+    ctx.moveTo(p.x + p.w * 0.55, y + 8);
+    ctx.lineTo(p.x + p.w * 0.75, y + 8);
+    ctx.stroke();
+    // 고드름
+    ctx.fillStyle = 'rgba(174, 230, 242, 0.95)';
+    ctx.beginPath();
+    ctx.moveTo(p.x + p.w * 0.25 - 4, y + p.h);
+    ctx.lineTo(p.x + p.w * 0.25, y + p.h + 8);
+    ctx.lineTo(p.x + p.w * 0.25 + 4, y + p.h);
+    ctx.moveTo(p.x + p.w * 0.7 - 3, y + p.h);
+    ctx.lineTo(p.x + p.w * 0.7, y + p.h + 6);
+    ctx.lineTo(p.x + p.w * 0.7 + 3, y + p.h);
+    ctx.fill();
   } else {
     // 초록 발판: 잔디 질감
     const g = ctx.createLinearGradient(0, y, 0, y + p.h);
@@ -1514,6 +1670,30 @@ function drawCoin(c) {
     ctx.beginPath();
     ctx.arc(-3, -4, 2.4, 0, Math.PI * 2);
     ctx.fill();
+  } else if (c.type === 'rainbow') {
+    // 무지개 코인 (5코인 가치): 색이 변하는 링
+    const hue = (frame * 6) % 360;
+    ctx.shadowColor = `hsla(${hue}, 90%, 60%, 0.8)`;
+    ctx.shadowBlur = 10;
+    const squeeze2 = Math.max(Math.abs(Math.sin(c.spin)), 0.3);
+    ctx.scale(squeeze2, 1);
+    const rg = ctx.createRadialGradient(-3, -4, 1, 0, 0, COIN_R + 3);
+    rg.addColorStop(0, '#ffffff');
+    rg.addColorStop(0.55, `hsl(${hue}, 90%, 68%)`);
+    rg.addColorStop(1, `hsl(${(hue + 60) % 360}, 90%, 52%)`);
+    ctx.fillStyle = rg;
+    ctx.beginPath();
+    ctx.arc(0, 0, COIN_R + 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = `hsl(${(hue + 120) % 360}, 80%, 45%)`;
+    ctx.lineWidth = 2.4;
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.font = '900 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('5', 0, 1);
   } else {
     // 금화: 방사형 광택 + 회전 + 은은한 발광
     ctx.shadowColor = 'rgba(255, 200, 60, 0.55)';
@@ -1684,6 +1864,86 @@ function drawDizzyCloud(dc) {
   ctx.restore();
 }
 
+function drawCannon(cn) {
+  const y = cn.y - cameraY;
+  if (y < -60 || y > H + 60) return;
+  ctx.save();
+  ctx.translate(cn.x, y);
+  const holding = holdCannon === cn;
+  // 조준선 (들어가 있을 때)
+  if (holding) {
+    ctx.save();
+    ctx.rotate(cn.ang);
+    ctx.strokeStyle = 'rgba(230, 126, 34, 0.7)';
+    ctx.lineWidth = 2.4;
+    ctx.setLineDash([7, 7]);
+    ctx.beginPath();
+    ctx.moveTo(0, -22);
+    ctx.lineTo(0, -95);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // 화살촉
+    ctx.fillStyle = 'rgba(230, 126, 34, 0.85)';
+    ctx.beginPath();
+    ctx.moveTo(0, -102);
+    ctx.lineTo(-6, -90);
+    ctx.lineTo(6, -90);
+    ctx.fill();
+    ctx.restore();
+  }
+  // 포신
+  ctx.save();
+  ctx.rotate(holding ? cn.ang : Math.sin(cn.osc) * 0.9 * 0.35);
+  const bg2 = ctx.createLinearGradient(-9, 0, 9, 0);
+  bg2.addColorStop(0, '#57606f');
+  bg2.addColorStop(0.5, '#2f3542');
+  bg2.addColorStop(1, '#1e232d');
+  ctx.fillStyle = bg2;
+  roundRect(-9, -30, 18, 32, 6);
+  ctx.fillStyle = '#e67e22';
+  roundRect(-9, -14, 18, 4, 2); // 주황 띠
+  ctx.restore();
+  // 받침대
+  ctx.fillStyle = cn.fired ? '#95a5a6' : '#e74c3c';
+  ctx.beginPath();
+  ctx.arc(0, 6, 13, Math.PI, 0);
+  ctx.fill();
+  ctx.fillStyle = '#7f4d1e';
+  roundRect(-16, 6, 32, 7, 3);
+  ctx.restore();
+}
+
+function drawWindOverlay() {
+  if (!windState) return;
+  const dir = windState.dir;
+  if (windState.warnT > 0) {
+    // 예고
+    if (Math.floor(windState.warnT / 8) % 2 === 0) {
+      ctx.font = '900 22px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 5;
+      const msg = dir > 0 ? '💨 강풍 주의! →' : '← 강풍 주의! 💨';
+      ctx.strokeText(msg, W / 2, 170);
+      ctx.fillStyle = '#0984e3';
+      ctx.fillText(msg, W / 2, 170);
+    }
+    return;
+  }
+  // 바람 줄무늬
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 12; i++) {
+    const yy = (i * 61 + 30) % H;
+    const xx = ((i * 97 + frame * 5 * dir) % (W + 60) + W + 60) % (W + 60) - 30;
+    ctx.beginPath();
+    ctx.moveTo(xx, yy);
+    ctx.lineTo(xx + 22 * dir, yy);
+    ctx.lineTo(xx + 16 * dir, yy - 3);
+    ctx.stroke();
+  }
+}
+
 function drawGhost() {
   if (!ghostPts || state !== State.PLAYING) return;
   const i = Math.floor(frame / GHOST_STEP);
@@ -1705,6 +1965,7 @@ function drawGhost() {
 }
 
 function drawPlayer() {
+  if (holdCannon) return; // 대포 안에 있을 때는 안 보임
   const x = player.x, y = player.y - cameraY;
   ctx.save();
   ctx.translate(x, y);
@@ -2125,6 +2386,7 @@ function draw() {
   drawGhost();
   for (const bh of blackholes) drawBlackhole(bh);
   for (const dc of dizzyClouds) drawDizzyCloud(dc);
+  for (const cn of cannons) drawCannon(cn);
   for (const p of platforms) drawPlatform(p);
   for (const c of coinsArr) drawCoin(c);
   for (const m of monsters) drawMonster(m);
@@ -2159,6 +2421,7 @@ function draw() {
 
   drawPlayer();
   drawWeather();
+  drawWindOverlay();
 
   // 떠오르는 텍스트 (콤보/아슬아슬/튜토리얼)
   for (const f of floatTexts) {
