@@ -27,7 +27,10 @@
         <button id="btn-ach" class="btn-secondary">🏆 도전과제</button>
       </div>
       <div class="btn-row">
+        <button id="btn-lb" class="btn-secondary">🏅 랭킹</button>
         <button id="btn-help" class="btn-secondary">❓ 게임 방법</button>
+      </div>
+      <div class="btn-row">
         <button id="btn-bgm" class="btn-secondary">🔊 음악 켜짐</button>
       </div>
       <div class="control-select">
@@ -58,6 +61,18 @@
       </div>
       <button id="btn-help-start" class="btn-primary">알겠어요, 시작!</button>
       <button id="btn-help-back" class="btn-secondary">돌아가기</button>
+    </div>
+
+    <!-- 랭킹 화면 -->
+    <div id="lb-screen" class="overlay hidden">
+      <h1 class="title small">🏅 랭킹</h1>
+      <div class="seg">
+        <button id="lb-tab-all" class="seg-btn active">전체</button>
+        <button id="lb-tab-week" class="seg-btn">이번 주</button>
+      </div>
+      <div id="lb-list" class="lb-list"></div>
+      <p id="lb-my" class="lb-my"></p>
+      <button id="btn-lb-back" class="btn-secondary">돌아가기</button>
     </div>
 
     <!-- 도전과제 화면 -->
@@ -172,6 +187,8 @@
       <p class="score-line coin">🪙 +<span id="final-coins">0</span></p>
       <p class="score-line best" id="final-best"></p>
       <p id="new-record" class="new-record hidden">🎉 신기록!</p>
+      <p id="lb-status" class="lb-status"></p>
+      <button id="btn-register" class="btn-secondary hidden">🏅 닉네임 만들고 랭킹 등록</button>
       <button id="btn-retry" class="btn-primary">다시 하기</button>
       <div class="btn-row">
         <button id="btn-share" class="btn-secondary">📤 기록 자랑하기</button>
