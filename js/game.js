@@ -26,6 +26,13 @@ const MOVE_MAX = 6;         // 좌우 최대 속도
 const MOVE_FRICTION = 0.90; // 좌우 감쇠
 const BULLET_VY = -12;
 
+// ---------- 아이템/코인 ----------
+const COIN_R = 9;              // 코인 반지름
+const MAGNET_RANGE = 110;      // 자석 흡인 범위
+const REVIVE_INVINCIBLE = 180; // 부활 후 무적 프레임
+const PRICES = { life: 150, rocket: 50, magnet: 75 };
+const MAX_OWN = { life: 3, rocket: 9, magnet: 9 };
+
 // ---------- 발판 ----------
 const PLAT_W = 62;
 const PLAT_H = 14;
@@ -97,21 +104,37 @@ const sfx = {
   shoot: () => beep(880, 0.05, 'square', 0.08),
   hit: () => beep(320, 0.1, 'sawtooth', 0.12),
   die: () => beep(120, 0.5, 'sawtooth', 0.2),
+  coin: () => beep(1250, 0.06, 'square', 0.1),
+  buy: () => beep(950, 0.12, 'square', 0.12),
+  revive: () => beep(640, 0.3, 'square', 0.15),
 };
+
+// ---------- 저장 데이터 (지갑/인벤토리) ----------
+let best = Number(localStorage.getItem('jump-best') || 0);
+let wallet = Number(localStorage.getItem('jump-coins') || 0);
+let inv = { life: 0, rocket: 0, magnet: 0 };
+try {
+  inv = Object.assign(inv, JSON.parse(localStorage.getItem('jump-inv') || '{}'));
+} catch (e) { /* 손상된 저장값은 무시 */ }
+
+function saveWallet() { localStorage.setItem('jump-coins', String(wallet)); }
+function saveInv() { localStorage.setItem('jump-inv', JSON.stringify(inv)); }
 
 // ---------- 게임 상태 ----------
 const State = { MENU: 0, PLAYING: 1, PAUSED: 2, OVER: 3 };
 let state = State.MENU;
 
-let player, platforms, monsters, bullets, particles, items;
+let player, platforms, monsters, bullets, particles, coinsArr;
 let cameraY;          // 월드 기준 카메라 상단 y
-let score, best;
+let score;
+let runCoins;         // 이번 판에 모은 코인
+let lives;            // 이번 판에 들고 들어온 생명
+let magnetActive;     // 이번 판 자석 사용 여부
+let invincible;       // 부활 후 무적 프레임
 let jetpackTimer;     // 남은 제트팩 프레임
 let shootPose;        // 발사 포즈 표시 프레임
 let highestPlatY;     // 지금까지 생성한 가장 높은(작은 y) 발판
 let frame = 0;
-
-best = Number(localStorage.getItem('jump-best') || 0);
 
 // ---------- 입력 ----------
 const input = { left: false, right: false, tilt: 0 };
@@ -174,18 +197,35 @@ function newGame() {
     vx: 0, vy: JUMP_VY,
     w: 46, h: 46,
     facing: 'left',
-    dead: false,
   };
   platforms = [];
   monsters = [];
   bullets = [];
   particles = [];
-  items = [];
+  coinsArr = [];
   cameraY = 0;
   score = 0;
+  runCoins = 0;
+  invincible = 0;
   jetpackTimer = 0;
   shootPose = 0;
   frame = 0;
+
+  // 들고 들어가는 아이템: 생명은 보유분 그대로, 로켓/자석은 있으면 1개 자동 사용
+  lives = inv.life;
+  magnetActive = false;
+  if (state === State.PLAYING) { // 메뉴 배경용 초기화 때는 소비하지 않음
+    if (inv.rocket > 0) {
+      inv.rocket--;
+      jetpackTimer = JETPACK_TIME;
+      sfx.jetpack();
+    }
+    if (inv.magnet > 0) {
+      inv.magnet--;
+      magnetActive = true;
+    }
+    saveInv();
+  }
 
   // 시작 발판: 바닥 근처에 촘촘히
   platforms.push(makePlatform(W / 2 - PLAT_W / 2, H - 60, PlatType.NORMAL));
@@ -194,9 +234,10 @@ function newGame() {
 }
 
 function makePlatform(x, y, type) {
+  const d = difficulty();
   return {
     x, y, w: PLAT_W, h: PLAT_H, type,
-    vx: type === PlatType.MOVING ? rand(1, 2.2) * (Math.random() < 0.5 ? -1 : 1) : 0,
+    vx: type === PlatType.MOVING ? rand(0.8, 1.4 + d * 1.2) * (Math.random() < 0.5 ? -1 : 1) : 0,
     broken: false,
     breakAnim: 0,
     spring: false,
@@ -204,21 +245,23 @@ function makePlatform(x, y, type) {
   };
 }
 
-// 난이도: 높이(점수)에 따라 발판 간격/특수발판 비율 증가
+// 난이도: 0(쉬움) → 1(최대). 12000점에 걸쳐 천천히 어려워짐
 function difficulty() {
-  return clamp(score / 4000, 0, 1); // 0 → 1
+  return clamp(score / 12000, 0, 1);
 }
 
 function spawnPlatformRow() {
   const d = difficulty();
-  const gap = rand(45 + d * 30, 70 + d * 45); // 간격 점점 벌어짐
+  // 초반엔 촘촘하게(38~58), 후반엔 성기게(최대 88~120)
+  const gap = rand(38 + d * 50, 58 + d * 62);
   const y = highestPlatY - gap;
   const x = rand(0, W - PLAT_W);
 
+  // 특수 발판 비율: 초반 10% → 후반 45%
   let type = PlatType.NORMAL;
   const r = Math.random();
-  if (r < 0.12 + d * 0.13) type = PlatType.MOVING;
-  else if (r < 0.24 + d * 0.2) type = PlatType.ONESHOT;
+  if (r < 0.05 + d * 0.22) type = PlatType.MOVING;
+  else if (r < 0.10 + d * 0.35) type = PlatType.ONESHOT;
 
   const p = makePlatform(x, y, type);
 
@@ -230,8 +273,20 @@ function spawnPlatformRow() {
   }
   platforms.push(p);
 
+  // 코인: 발판 위 (부서지는 발판·아이템 발판 제외)
+  if (type !== PlatType.BREAKING && !p.spring && !p.jetpack && Math.random() < 0.38) {
+    coinsArr.push({ x: x + PLAT_W / 2, y: y - 24, spin: Math.random() * Math.PI * 2 });
+  }
+  // 가끔 허공에 코인 3개 아치
+  if (Math.random() < 0.07) {
+    const cx = rand(50, W - 50);
+    for (let i = -1; i <= 1; i++) {
+      coinsArr.push({ x: cx + i * 26, y: y - gap / 2 - Math.abs(i) * 8, spin: Math.random() * Math.PI * 2 });
+    }
+  }
+
   // 부서지는 발판은 근처에 보너스로 추가 (단독 경로가 되지 않게)
-  if (Math.random() < 0.10 + d * 0.15) {
+  if (Math.random() < 0.06 + d * 0.2) {
     const bx = rand(0, W - PLAT_W);
     const by = y - rand(15, 35);
     if (Math.abs(bx - x) > PLAT_W * 0.8) {
@@ -239,12 +294,12 @@ function spawnPlatformRow() {
     }
   }
 
-  // 몬스터: 난이도 오르면 등장
-  if (score > 800 && Math.random() < 0.035 + d * 0.05) {
+  // 몬스터: 1500점부터 등장, 후반으로 갈수록 잦아짐
+  if (score > 1500 && Math.random() < 0.02 + d * 0.07) {
     monsters.push({
       x: rand(30, W - 30), y: y - 40,
       w: 40, h: 34,
-      vx: rand(0.5, 1.5) * (Math.random() < 0.5 ? -1 : 1),
+      vx: rand(0.5, 1.2 + d * 0.8) * (Math.random() < 0.5 ? -1 : 1),
       dead: false,
       wobble: Math.random() * Math.PI * 2,
     });
@@ -260,9 +315,31 @@ function shoot() {
   sfx.shoot();
 }
 
+// ---------- 죽음 처리: 생명이 있으면 부활 ----------
+function tryRevive() {
+  if (lives > 0) {
+    lives--;
+    inv.life = lives;
+    saveInv();
+    // 화면 아래에서 크게 튀어오르며 부활 + 잠시 무적
+    player.x = clamp(player.x, 30, W - 30);
+    player.y = cameraY + H - 4;
+    player.vy = SPRING_VY * 1.2;
+    player.vx = 0;
+    invincible = REVIVE_INVINCIBLE;
+    jetpackTimer = 0;
+    sfx.revive();
+    addBurst(player.x, player.y, '#e74c3c');
+    return true;
+  }
+  gameOver();
+  return false;
+}
+
 // ---------- 업데이트 ----------
 function update() {
   frame++;
+  if (invincible > 0) invincible--;
 
   // --- 좌우 이동 ---
   let ax = 0;
@@ -332,6 +409,30 @@ function update() {
     if (p.breakAnim > 0) p.breakAnim++;
   }
 
+  // --- 코인 ---
+  for (const c of coinsArr) {
+    c.spin += 0.15;
+    // 자석: 범위 내 코인을 끌어당김
+    if (magnetActive) {
+      const dx = player.x - c.x, dy = player.y - c.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < MAGNET_RANGE && dist > 1) {
+        c.x += (dx / dist) * 4.5;
+        c.y += (dy / dist) * 4.5;
+      }
+    }
+    // 획득
+    if (Math.hypot(player.x - c.x, player.y - c.y) < COIN_R + player.w / 2 - 6) {
+      c.taken = true;
+      runCoins++;
+      wallet++;
+      saveWallet();
+      sfx.coin();
+      particles.push({ x: c.x, y: c.y, vx: 0, vy: -1.5, life: 18, color: '#f1c40f' });
+    }
+  }
+  coinsArr = coinsArr.filter((c) => !c.taken && c.y < cameraY + H + 40);
+
   // --- 몬스터 ---
   for (const m of monsters) {
     if (m.dead) continue;
@@ -339,7 +440,8 @@ function update() {
     m.wobble += 0.1;
     if (m.x < 20 || m.x > W - 20) m.vx *= -1;
 
-    // 플레이어 충돌
+    // 플레이어 충돌 (무적 중엔 통과)
+    if (invincible > 0) continue;
     const dx = Math.abs(player.x - m.x);
     const dy = player.y - m.y;
     if (dx < (player.w + m.w) / 2 - 8 && Math.abs(dy) < (player.h + m.h) / 2 - 6) {
@@ -350,8 +452,9 @@ function update() {
         sfx.hit();
         addBurst(m.x, m.y, '#9b59b6');
       } else {
-        gameOver();
-        return;
+        m.dead = true; // 부활 직후 같은 몬스터에 또 죽지 않게 제거
+        addBurst(m.x, m.y, '#9b59b6');
+        if (!tryRevive()) return;
       }
     }
   }
@@ -395,7 +498,7 @@ function update() {
 
   // --- 낙사 ---
   if (player.y > cameraY + H + player.h) {
-    gameOver();
+    tryRevive();
   }
 }
 
@@ -512,10 +615,36 @@ function roundRect(x, y, w, h, r) {
   ctx.fill();
 }
 
+function drawCoin(c) {
+  const y = c.y - cameraY;
+  const squeeze = Math.abs(Math.sin(c.spin)); // 회전하는 느낌
+  ctx.save();
+  ctx.translate(c.x, y);
+  ctx.scale(Math.max(squeeze, 0.25), 1);
+  ctx.fillStyle = '#f1c40f';
+  ctx.strokeStyle = '#d4a017';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(0, 0, COIN_R, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#d4a017';
+  ctx.font = '900 10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('★', 0, 1);
+  ctx.restore();
+}
+
 function drawPlayer() {
   const x = player.x, y = player.y - cameraY;
   ctx.save();
   ctx.translate(x, y);
+
+  // 부활 무적: 깜빡임
+  if (invincible > 0 && Math.floor(invincible / 6) % 2 === 0) {
+    ctx.globalAlpha = 0.35;
+  }
 
   // 제트팩 장착 표시
   if (jetpackTimer > 0) {
@@ -614,6 +743,7 @@ function draw() {
   drawBackground();
 
   for (const p of platforms) drawPlatform(p);
+  for (const c of coinsArr) drawCoin(c);
   for (const m of monsters) drawMonster(m);
 
   // 총알
@@ -634,15 +764,23 @@ function draw() {
 
   drawPlayer();
 
-  // 점수
+  // HUD: 점수 / 코인 / 생명
   if (state === State.PLAYING || state === State.PAUSED) {
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
     roundRect(8, 8, 110, 34, 17);
+    roundRect(8, 48, 86, 28, 14);
     ctx.fillStyle = '#2c3e50';
     ctx.font = '900 20px sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText(String(score), 24, 26);
+    ctx.font = '800 15px sans-serif';
+    ctx.fillStyle = '#b7791f';
+    ctx.fillText('🪙 ' + runCoins, 18, 63);
+    if (lives > 0) {
+      ctx.font = '15px sans-serif';
+      ctx.fillText('❤️'.repeat(lives), 10, 92);
+    }
   }
 
   ctx.restore();
@@ -656,24 +794,49 @@ function loop() {
   rafId = requestAnimationFrame(loop);
 }
 
-// ---------- 화면 전환 ----------
+// ---------- 화면 전환 / 상점 ----------
 const $ = (id) => document.getElementById(id);
 const startScreen = $('start-screen');
 const overScreen = $('gameover-screen');
 const pauseScreen = $('pause-screen');
+const shopScreen = $('shop-screen');
 const pauseBtn = $('btn-pause');
 
-function showBest() {
+function refreshMenu() {
   $('best-score-label').textContent = best > 0 ? `최고 기록 ${best}` : '';
+  $('wallet-label').textContent = `🪙 ${wallet}`;
+}
+
+function refreshShop() {
+  $('shop-balance').textContent = String(wallet);
+  $('own-life').textContent = String(inv.life);
+  $('own-rocket').textContent = String(inv.rocket);
+  $('own-magnet').textContent = String(inv.magnet);
+  document.querySelectorAll('.btn-buy').forEach((btn) => {
+    const item = btn.dataset.item;
+    btn.disabled = wallet < PRICES[item] || inv[item] >= MAX_OWN[item];
+    btn.textContent = inv[item] >= MAX_OWN[item] ? '최대 보유' : `🪙 ${PRICES[item]}`;
+  });
+}
+
+function buyItem(item) {
+  if (wallet < PRICES[item] || inv[item] >= MAX_OWN[item]) return;
+  wallet -= PRICES[item];
+  inv[item]++;
+  saveWallet();
+  saveInv();
+  sfx.buy();
+  refreshShop();
 }
 
 function startGame() {
   requestTilt();
+  state = State.PLAYING; // newGame이 아이템을 소비하도록 먼저 상태 변경
   newGame();
-  state = State.PLAYING;
   startScreen.classList.add('hidden');
   overScreen.classList.add('hidden');
   pauseScreen.classList.add('hidden');
+  shopScreen.classList.add('hidden');
   pauseBtn.classList.remove('hidden');
 }
 
@@ -697,6 +860,7 @@ function gameOver() {
     localStorage.setItem('jump-best', String(best));
   }
   $('final-score').textContent = String(score);
+  $('final-coins').textContent = String(runCoins);
   $('final-best').textContent = `최고 기록 ${best}`;
   $('new-record').classList.toggle('hidden', !isRecord);
   overScreen.classList.remove('hidden');
@@ -709,7 +873,7 @@ function goHome() {
   pauseScreen.classList.add('hidden');
   pauseBtn.classList.add('hidden');
   startScreen.classList.remove('hidden');
-  showBest();
+  refreshMenu();
 }
 
 $('btn-start').addEventListener('click', startGame);
@@ -718,6 +882,19 @@ $('btn-home').addEventListener('click', goHome);
 $('btn-resume').addEventListener('click', resumeGame);
 $('btn-quit').addEventListener('click', goHome);
 pauseBtn.addEventListener('click', pauseGame);
+$('btn-shop').addEventListener('click', () => {
+  startScreen.classList.add('hidden');
+  refreshShop();
+  shopScreen.classList.remove('hidden');
+});
+$('btn-shop-back').addEventListener('click', () => {
+  shopScreen.classList.add('hidden');
+  startScreen.classList.remove('hidden');
+  refreshMenu();
+});
+document.querySelectorAll('.btn-buy').forEach((btn) => {
+  btn.addEventListener('click', () => buyItem(btn.dataset.item));
+});
 
 // 탭 전환 시 자동 일시정지
 document.addEventListener('visibilitychange', () => {
@@ -726,5 +903,5 @@ document.addEventListener('visibilitychange', () => {
 
 // ---------- 시작 ----------
 newGame(); // 메뉴 뒤 배경용
-showBest();
+refreshMenu();
 loop();

@@ -22,17 +22,53 @@
       <h1 class="title">점프!<br>점프!</h1>
       <p class="subtitle">하늘 끝까지 올라가 보세요</p>
       <button id="btn-start" class="btn-primary">게임 시작</button>
+      <button id="btn-shop" class="btn-secondary">🛒 상점</button>
       <div class="help">
         <p>📱 모바일: 화면 좌/우 터치 또는 기기 기울이기</p>
         <p>⌨️ PC: ← → 방향키, 스페이스바로 발사</p>
       </div>
       <p id="best-score-label" class="best"></p>
+      <p id="wallet-label" class="wallet">🪙 0</p>
+    </div>
+
+    <!-- 상점 화면 -->
+    <div id="shop-screen" class="overlay hidden">
+      <h1 class="title small">🛒 상점</h1>
+      <p class="wallet big">🪙 <span id="shop-balance">0</span></p>
+      <div class="shop-items">
+        <div class="shop-item">
+          <div class="shop-info">
+            <span class="shop-name">❤️ 생명</span>
+            <span class="shop-desc">죽어도 한 번 부활! (최대 3개 보유)</span>
+            <span class="shop-own">보유: <b id="own-life">0</b></span>
+          </div>
+          <button class="btn-buy" data-item="life">🪙 150</button>
+        </div>
+        <div class="shop-item">
+          <div class="shop-info">
+            <span class="shop-name">🚀 로켓 출발</span>
+            <span class="shop-desc">게임 시작 시 하늘로 발사! (자동 사용)</span>
+            <span class="shop-own">보유: <b id="own-rocket">0</b></span>
+          </div>
+          <button class="btn-buy" data-item="rocket">🪙 50</button>
+        </div>
+        <div class="shop-item">
+          <div class="shop-info">
+            <span class="shop-name">🧲 코인 자석</span>
+            <span class="shop-desc">한 판 동안 주변 코인을 끌어당김 (자동 사용)</span>
+            <span class="shop-own">보유: <b id="own-magnet">0</b></span>
+          </div>
+          <button class="btn-buy" data-item="magnet">🪙 75</button>
+        </div>
+      </div>
+      <button id="btn-shop-back" class="btn-secondary">돌아가기</button>
     </div>
 
     <!-- 게임오버 화면 -->
     <div id="gameover-screen" class="overlay hidden">
       <h1 class="title small">게임 오버</h1>
       <p class="score-line">점수 <span id="final-score">0</span></p>
+      <p class="score-line coin">🪙 +<span id="final-coins">0</span></p>
       <p class="score-line best" id="final-best"></p>
       <p id="new-record" class="new-record hidden">🎉 신기록!</p>
       <button id="btn-retry" class="btn-primary">다시 하기</button>
