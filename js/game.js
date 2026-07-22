@@ -140,6 +140,9 @@ let frame = 0;
 // ---------- 입력 ----------
 const input = { left: false, right: false, tilt: 0 };
 
+// 조작 방법: 'touch'(터치·방향키) 또는 'tilt'(기울이기)
+let controlMode = localStorage.getItem('jump-control') || 'touch';
+
 window.addEventListener('keydown', (e) => {
   if (e.code === 'ArrowLeft') input.left = true;
   if (e.code === 'ArrowRight') input.right = true;
@@ -154,11 +157,15 @@ window.addEventListener('keyup', (e) => {
   if (e.code === 'ArrowRight') input.right = false;
 });
 
-// 터치: 화면 좌/우 절반 누르면 이동, 위쪽 짧은 탭은 발사
+// 터치: [터치 모드] 좌/우 절반 이동, 위쪽 탭 발사 / [기울이기 모드] 아무 곳이나 탭 → 발사
 let touchSide = null;
 canvas.addEventListener('touchstart', (e) => {
   e.preventDefault();
   if (state !== State.PLAYING) return;
+  if (controlMode === 'tilt') {
+    shoot();
+    return;
+  }
   const rect = canvas.getBoundingClientRect();
   const t = e.changedTouches[0];
   const x = t.clientX - rect.left;
@@ -178,8 +185,9 @@ canvas.addEventListener('touchend', (e) => {
   input.right = false;
 }, { passive: false });
 
-// 기울기 (모바일)
+// 기울기 (모바일) — 기울이기 모드에서만 반영
 window.addEventListener('deviceorientation', (e) => {
+  if (controlMode !== 'tilt') { input.tilt = 0; return; }
   if (e.gamma != null) input.tilt = clamp(e.gamma / 15, -1, 1);
 });
 
@@ -836,6 +844,22 @@ const pauseBtn = $('btn-pause');
 function refreshMenu() {
   $('best-score-label').textContent = best > 0 ? `최고 기록 ${best}` : '';
   $('wallet-label').textContent = `🪙 ${wallet}`;
+  refreshControlUI();
+}
+
+function refreshControlUI() {
+  $('ctrl-touch').classList.toggle('active', controlMode === 'touch');
+  $('ctrl-tilt').classList.toggle('active', controlMode === 'tilt');
+  $('control-desc').innerHTML = controlMode === 'touch'
+    ? '화면 좌/우 터치(또는 ← → 방향키)로 이동<br>화면 위쪽 탭(또는 스페이스바)으로 발사'
+    : '핸드폰을 좌우로 기울여 이동<br>화면 아무 곳이나 탭하면 발사';
+}
+
+function setControlMode(mode) {
+  controlMode = mode;
+  localStorage.setItem('jump-control', mode);
+  input.tilt = 0;
+  refreshControlUI();
 }
 
 function refreshShop() {
@@ -870,7 +894,7 @@ function startGame() {
 }
 
 function beginCountdown() {
-  requestTilt();
+  if (controlMode === 'tilt') requestTilt(); // iOS 센서 권한은 기울이기 모드에서만 요청
   state = State.COUNTDOWN; // newGame이 아이템을 소비하도록 먼저 상태 변경
   newGame();
   countdownUntil = performance.now() + 3000;
@@ -927,6 +951,8 @@ function goHome() {
 
 $('btn-start').addEventListener('click', startGame);
 $('btn-retry').addEventListener('click', beginCountdown);
+$('ctrl-touch').addEventListener('click', () => setControlMode('touch'));
+$('ctrl-tilt').addEventListener('click', () => setControlMode('tilt'));
 $('btn-help').addEventListener('click', showHelp);
 $('btn-help-start').addEventListener('click', () => {
   localStorage.setItem('jump-help-seen', '1');

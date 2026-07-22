@@ -306,3 +306,51 @@ html, body {
   font-size: 22px;
   text-align: center;
 }
+
+/* ---------- 조작 방법 선택 ---------- */
+.control-select {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.control-title {
+  font-size: clamp(13px, 3.5vw, 16px);
+  font-weight: 800;
+  color: #34495e;
+}
+
+.seg {
+  display: flex;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 999px;
+  padding: 4px;
+  gap: 4px;
+}
+
+.seg-btn {
+  font-family: inherit;
+  font-size: clamp(13px, 3.6vw, 16px);
+  font-weight: 700;
+  padding: 8px 18px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: #57606f;
+  cursor: pointer;
+}
+
+.seg-btn.active {
+  background: #27ae60;
+  color: #fff;
+  box-shadow: 0 2px 0 #1e8449;
+}
+
+.control-desc {
+  font-size: clamp(11px, 3vw, 13px);
+  color: #57606f;
+  line-height: 1.6;
+  min-height: 2.6em;
+}
