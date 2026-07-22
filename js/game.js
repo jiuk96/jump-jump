@@ -225,11 +225,62 @@ function completeMission() {
   lastMissionId = mission.def.id;
   mission = null;
   missionFlash = 140;
+  flashMain = '미션 성공!';
+  flashSub = '🚀 보너스 타임!';
   missionCooldown = 420;
   jetpackTimer = Math.max(jetpackTimer, 0) + BONUS_JETPACK;
   invincible = Math.max(invincible, BONUS_INVINCIBLE);
   sfx.bonus();
   addBurst(player.x, player.y, '#f1c40f');
+}
+
+// 별 10개 → 스타 파워: 짧은 무적 비행
+function starPower() {
+  starCount = 0;
+  missionFlash = 140;
+  flashMain = '⭐ 스타 파워!';
+  flashSub = '무적 비행!';
+  jetpackTimer = Math.max(jetpackTimer, 0) + STAR_FLIGHT;
+  invincible = Math.max(invincible, STAR_FLIGHT + 60);
+  sfx.bonus();
+  addBurst(player.x, player.y, '#ffd832');
+}
+
+// ---------- 날씨 ----------
+function updateWeather() {
+  // 우주(고고도)에서는 날씨 없음
+  if (weather) {
+    weather.t--;
+    if (weather.t <= 0) {
+      weather = null;
+      weatherWait = Math.round(rand(900, 2200));
+    } else {
+      // 방울/눈송이 생성
+      const n = weather.type === 'rain' ? 3 : 1;
+      for (let i = 0; i < n && weatherDrops.length < 160; i++) {
+        if (weather.type === 'rain') {
+          weatherDrops.push({ x: rand(-20, W + 20), y: -20, vx: -1.6, vy: rand(11, 15), rain: true });
+        } else {
+          weatherDrops.push({
+            x: rand(-10, W + 10), y: -10,
+            vx: 0, vy: rand(0.8, 1.8), rain: false,
+            swayPhase: rand(0, Math.PI * 2), r: rand(1.6, 3.2),
+          });
+        }
+      }
+    }
+  } else if (score < 13000) {
+    weatherWait--;
+    if (weatherWait <= 0) {
+      const type = score > 8000 ? 'snow' : (Math.random() < 0.55 ? 'rain' : 'snow');
+      weather = { type, t: Math.round(rand(480, 750)) };
+    }
+  }
+  for (const w of weatherDrops) {
+    w.x += w.vx + (w.rain ? 0 : Math.sin(frame * 0.04 + w.swayPhase) * 0.7);
+    w.y += w.vy;
+  }
+  weatherDrops = weatherDrops.filter((w) => w.y < H + 20);
 }
 
 // ---------- 게임 상태 ----------
@@ -248,6 +299,16 @@ let jetpackTimer;     // 남은 제트팩 프레임
 let shootPose;        // 발사 포즈 표시 프레임
 let highestPlatY;     // 지금까지 생성한 가장 높은(작은 y) 발판
 let frame = 0;
+let starCount;        // 모은 별 (10개 = 스타 파워)
+let pickupTimer;      // 다음 코인/별 낙하까지 프레임
+let weather;          // null 또는 { type:'rain'|'snow', t }
+let weatherWait;      // 다음 날씨까지 프레임
+let weatherDrops;     // 화면 좌표 빗방울/눈송이
+let flashMain = '';   // 성공 배너 문구
+let flashSub = '';
+
+const STAR_GOAL = 10;
+const STAR_FLIGHT = 190;  // 스타 파워 비행 프레임 (짧게)
 
 // ---------- 입력 ----------
 const input = { left: false, right: false, tilt: 0 };
@@ -339,6 +400,13 @@ function newGame() {
   lastMissionId = null;
   landedSet = new Set();
 
+  // 별/낙하 아이템/날씨 초기화
+  starCount = 0;
+  pickupTimer = 60;
+  weather = null;
+  weatherWait = Math.round(rand(600, 1500));
+  weatherDrops = [];
+
   // 들고 들어가는 아이템: 생명은 보유분 그대로, 로켓/자석은 있으면 1개 자동 사용
   lives = inv.life;
   magnetActive = false;
@@ -363,8 +431,15 @@ function newGame() {
 
 function makePlatform(x, y, type) {
   const d = difficulty();
+  // 높이 올라갈수록 발판이 작아짐 (62 → 최소 ~44)
+  const w = clamp(PLAT_W - d * 18 + rand(-3, 3), 40, PLAT_W + 3);
+  // 일부 발판은 늘었다 줄었다 (난이도 오를수록 자주)
+  const pulse = type !== PlatType.BREAKING && Math.random() < 0.05 + d * 0.12;
   return {
-    x, y, w: PLAT_W, h: PLAT_H, type,
+    x, y, w, h: PLAT_H, type,
+    baseW: w,
+    pulse,
+    pulsePhase: rand(0, Math.PI * 2),
     vx: type === PlatType.MOVING ? rand(0.8, 1.4 + d * 1.2) * (Math.random() < 0.5 ? -1 : 1) : 0,
     broken: false,
     breakAnim: 0,
@@ -392,6 +467,7 @@ function spawnPlatformRow() {
   else if (r < 0.06 + d * 0.39) type = PlatType.ONESHOT;
 
   const p = makePlatform(x, y, type);
+  p.x = rand(0, W - p.w);
 
   // 아이템: 일반 발판 위에만
   if (type === PlatType.NORMAL) {
@@ -400,18 +476,6 @@ function spawnPlatformRow() {
     else if (ir < 0.075) p.jetpack = true;
   }
   platforms.push(p);
-
-  // 코인: 발판 위 (부서지는 발판·아이템 발판 제외)
-  if (type !== PlatType.BREAKING && !p.spring && !p.jetpack && Math.random() < 0.38) {
-    coinsArr.push({ x: x + PLAT_W / 2, y: y - 24, spin: Math.random() * Math.PI * 2 });
-  }
-  // 가끔 허공에 코인 3개 아치
-  if (Math.random() < 0.07) {
-    const cx = rand(50, W - 50);
-    for (let i = -1; i <= 1; i++) {
-      coinsArr.push({ x: cx + i * 26, y: y - gap / 2 - Math.abs(i) * 8, spin: Math.random() * Math.PI * 2 });
-    }
-  }
 
   // 부서지는 발판은 근처에 보너스로 추가 (단독 경로가 되지 않게)
   if (Math.random() < 0.06 + d * 0.2) {
@@ -534,18 +598,37 @@ function update() {
     }
   }
 
-  // --- 발판 이동/정리 ---
+  // --- 발판 이동/맥동/정리 ---
   for (const p of platforms) {
     if (p.vx) {
       p.x += p.vx;
       if (p.x < 0 || p.x + p.w > W) p.vx *= -1;
     }
+    if (p.pulse) {
+      // 중심을 유지하며 늘었다 줄었다 (0.72x ~ 1.08x)
+      const newW = p.baseW * (0.9 + 0.18 * Math.sin(frame * 0.045 + p.pulsePhase));
+      p.x -= (newW - p.w) / 2;
+      p.w = newW;
+    }
     if (p.breakAnim > 0) p.breakAnim++;
   }
 
-  // --- 코인 ---
+  // --- 하늘에서 떨어지는 코인/별 ---
+  if (--pickupTimer <= 0) {
+    pickupTimer = Math.round(rand(35, 75));
+    const isStar = Math.random() < 0.16;
+    coinsArr.push({
+      x: rand(20, W - 20), y: cameraY - 30,
+      vy: rand(1.0, 2.1),
+      swayPhase: rand(0, Math.PI * 2),
+      spin: rand(0, Math.PI * 2),
+      type: isStar ? 'star' : 'coin',
+    });
+  }
   for (const c of coinsArr) {
     c.spin += 0.15;
+    c.y += c.vy;                                     // 아래로 낙하
+    c.x += Math.sin(frame * 0.05 + c.swayPhase) * 0.6; // 하늘하늘
     // 자석: 범위 내 코인을 끌어당김
     if (magnetActive) {
       const dx = player.x - c.x, dy = player.y - c.y;
@@ -556,17 +639,27 @@ function update() {
       }
     }
     // 획득
-    if (Math.hypot(player.x - c.x, player.y - c.y) < COIN_R + player.w / 2 - 6) {
+    if (Math.hypot(player.x - c.x, player.y - c.y) < COIN_R + player.w / 2 - 4) {
       c.taken = true;
-      runCoins++;
-      wallet++;
-      saveWallet();
-      sfx.coin();
-      particles.push({ x: c.x, y: c.y, vx: 0, vy: -1.5, life: 18, color: '#f1c40f' });
-      missionEvent('Coin');
+      if (c.type === 'star') {
+        starCount++;
+        sfx.spring();
+        addBurst(c.x, c.y, '#ffd832');
+        if (starCount >= STAR_GOAL) starPower();
+      } else {
+        runCoins++;
+        wallet++;
+        saveWallet();
+        sfx.coin();
+        particles.push({ x: c.x, y: c.y, vx: 0, vy: -1.5, life: 18, color: '#f1c40f' });
+        missionEvent('Coin');
+      }
     }
   }
   coinsArr = coinsArr.filter((c) => !c.taken && c.y < cameraY + H + 40);
+
+  // --- 날씨 (비/눈) ---
+  updateWeather();
 
   // --- 몬스터 ---
   for (const m of monsters) {
@@ -660,29 +753,93 @@ function addBurst(x, y, color) {
 }
 
 // ---------- 그리기 ----------
+// 고도별 배경 색 구간: 지상 → 하늘 → 성층권 → 우주
+const BG_STOPS = [
+  [0,     [150, 214, 236], [196, 232, 200]], // 지상: 하늘 + 풀빛 지평선
+  [3500,  [125, 200, 235], [176, 224, 230]], // 하늘
+  [8500,  [66, 114, 190],  [120, 168, 220]], // 성층권
+  [14000, [10, 10, 40],    [40, 30, 80]],    // 우주
+];
+
+function bgColors() {
+  let a = BG_STOPS[0], b = BG_STOPS[BG_STOPS.length - 1];
+  for (let i = 0; i < BG_STOPS.length - 1; i++) {
+    if (score >= BG_STOPS[i][0] && score < BG_STOPS[i + 1][0]) {
+      a = BG_STOPS[i];
+      b = BG_STOPS[i + 1];
+      break;
+    }
+  }
+  const t = a === b ? 0 : clamp((score - a[0]) / (b[0] - a[0]), 0, 1);
+  return [lerpColor(a[1], b[1], t), lerpColor(a[2], b[2], t)];
+}
+
 function drawBackground() {
-  // 높이에 따라 하늘색 → 우주로 변화
-  const t = clamp(score / 15000, 0, 1);
-  const top = lerpColor([135, 206, 235], [10, 10, 40], t);
-  const bot = lerpColor([176, 224, 230], [40, 30, 80], t);
+  const [top, bot] = bgColors();
   const g = ctx.createLinearGradient(0, 0, 0, H);
   g.addColorStop(0, `rgb(${top.join(',')})`);
   g.addColorStop(1, `rgb(${bot.join(',')})`);
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
 
-  // 구름/별 (월드 좌표에 고정된 느낌으로 패럴랙스)
+  // 구름은 성층권에서 옅어지고, 별은 우주에 가까울수록 나타남
+  const cloudA = clamp(1 - (score - 7000) / 4000, 0, 1);
+  const starA = clamp((score - 10500) / 3500, 0, 1);
   ctx.save();
   const par = cameraY * 0.3;
   for (let i = 0; i < 8; i++) {
     const cy = ((i * 217 - par) % (H + 80) + H + 80) % (H + 80) - 40;
     const cx = (i * 137) % W;
-    if (t < 0.6) {
-      ctx.fillStyle = `rgba(255,255,255,${0.5 * (1 - t)})`;
+    if (cloudA > 0.02) {
+      ctx.fillStyle = `rgba(255,255,255,${0.5 * cloudA})`;
       drawCloud(cx, cy);
+    }
+    if (starA > 0.02) {
+      ctx.fillStyle = `rgba(255,255,255,${0.7 * starA})`;
+      ctx.fillRect((cx * 1.7 + 40) % W, (cy * 1.3) % H, 3, 3);
+      ctx.fillRect((cx * 0.6 + 150) % W, (cy * 0.8 + 90) % H, 2, 2);
+    }
+  }
+  ctx.restore();
+
+  // 지상 (게임 시작 지점 근처에서만 보임)
+  const groundScreenY = (H - 26) - cameraY;
+  if (groundScreenY < H + 30) {
+    ctx.fillStyle = '#5cb168';
+    ctx.fillRect(0, groundScreenY, W, H - groundScreenY + 30);
+    ctx.fillStyle = '#4c9c58';
+    for (let i = 0; i < 9; i++) {
+      const bx = (i * 47 + 12) % W;
+      ctx.beginPath();
+      ctx.arc(bx, groundScreenY + 2, 7 + (i % 3) * 3, Math.PI, 0);
+      ctx.fill();
+    }
+    // 수풀
+    ctx.fillStyle = '#3f8a4b';
+    ctx.beginPath();
+    ctx.arc(50, groundScreenY, 14, Math.PI, 0);
+    ctx.arc(72, groundScreenY, 18, Math.PI, 0);
+    ctx.arc(300, groundScreenY, 16, Math.PI, 0);
+    ctx.fill();
+  }
+}
+
+function drawWeather() {
+  if (!weatherDrops.length) return;
+  ctx.save();
+  for (const w of weatherDrops) {
+    if (w.rain) {
+      ctx.strokeStyle = 'rgba(175,200,235,0.65)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(w.x, w.y);
+      ctx.lineTo(w.x + w.vx * 1.4, w.y - 14);
+      ctx.stroke();
     } else {
-      ctx.fillStyle = `rgba(255,255,255,${0.6 * t})`;
-      ctx.fillRect(cx, cy, 3, 3);
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.beginPath();
+      ctx.arc(w.x, w.y, w.r, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
   ctx.restore();
@@ -764,22 +921,44 @@ function roundRect(x, y, w, h, r) {
 
 function drawCoin(c) {
   const y = c.y - cameraY;
-  const squeeze = Math.abs(Math.sin(c.spin)); // 회전하는 느낌
   ctx.save();
   ctx.translate(c.x, y);
-  ctx.scale(Math.max(squeeze, 0.25), 1);
-  ctx.fillStyle = '#f1c40f';
-  ctx.strokeStyle = '#d4a017';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(0, 0, COIN_R, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = '#d4a017';
-  ctx.font = '900 10px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('★', 0, 1);
+  if (c.type === 'star') {
+    // 반짝이는 별
+    ctx.rotate(c.spin * 0.35);
+    const R = 13, r = 5.5;
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const rad = i % 2 === 0 ? R : r;
+      const a = -Math.PI / 2 + (Math.PI / 5) * i;
+      ctx.lineTo(Math.cos(a) * rad, Math.sin(a) * rad);
+    }
+    ctx.closePath();
+    ctx.fillStyle = '#ffd832';
+    ctx.strokeStyle = '#e0a800';
+    ctx.lineWidth = 2;
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.beginPath();
+    ctx.arc(-3, -4, 2.4, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    const squeeze = Math.abs(Math.sin(c.spin)); // 회전하는 느낌
+    ctx.scale(Math.max(squeeze, 0.25), 1);
+    ctx.fillStyle = '#f1c40f';
+    ctx.strokeStyle = '#d4a017';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, COIN_R, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#d4a017';
+    ctx.font = '900 10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('₩', 0, 1);
+  }
   ctx.restore();
 }
 
@@ -921,6 +1100,7 @@ function draw() {
   ctx.globalAlpha = 1;
 
   drawPlayer();
+  drawWeather();
 
   // 카운트다운: 큰 숫자 표시
   if (state === State.COUNTDOWN) {
@@ -948,11 +1128,12 @@ function draw() {
     ctx.fillText('준비하세요!', W / 2, H / 2 + 40);
   }
 
-  // HUD: 점수 / 코인 / 생명
+  // HUD: 점수 / 코인 / 별 / 생명
   if (state === State.PLAYING || state === State.PAUSED || state === State.COUNTDOWN) {
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
     roundRect(8, 8, 110, 34, 17);
     roundRect(8, 48, 86, 28, 14);
+    roundRect(100, 48, 92, 28, 14);
     ctx.fillStyle = '#2c3e50';
     ctx.font = '900 20px sans-serif';
     ctx.textAlign = 'left';
@@ -961,6 +1142,8 @@ function draw() {
     ctx.font = '800 15px sans-serif';
     ctx.fillStyle = '#b7791f';
     ctx.fillText('🪙 ' + runCoins, 18, 63);
+    ctx.fillStyle = '#c78a00';
+    ctx.fillText(`⭐ ${starCount}/${STAR_GOAL}`, 110, 63);
 
     // 미션 바 (상단 전체 폭)
     if (mission) {
@@ -994,13 +1177,13 @@ function draw() {
       ctx.textBaseline = 'middle';
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 6;
-      ctx.strokeText('미션 성공!', 0, 0);
+      ctx.strokeText(flashMain, 0, 0);
       ctx.fillStyle = '#e67e22';
-      ctx.fillText('미션 성공!', 0, 0);
+      ctx.fillText(flashMain, 0, 0);
       ctx.font = '900 20px sans-serif';
-      ctx.strokeText('🚀 보너스 타임!', 0, 34);
+      ctx.strokeText(flashSub, 0, 34);
       ctx.fillStyle = '#8e44ad';
-      ctx.fillText('🚀 보너스 타임!', 0, 34);
+      ctx.fillText(flashSub, 0, 34);
       ctx.restore();
     }
   }
