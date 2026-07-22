@@ -5,7 +5,8 @@
  *
  * 캐릭터 교체 방법:
  *   assets/character/ 폴더에 아래 파일을 넣으면 자동 적용됩니다.
- *     - jump-left.png  : 왼쪽을 보는 기본 모습 (필수)
+ *     - jump-left.png  : 기본/하강 모습 (필수)
+ *     - fly-left.png   : 점프로 상승 중일 때 모습 (선택)
  *     - jump-right.png : 오른쪽을 보는 모습 (없으면 좌우반전 사용)
  *     - shoot.png      : 위로 발사할 때 모습 (선택)
  *   파일이 없으면 내장 임시 캐릭터가 그려집니다.
@@ -64,7 +65,7 @@ window.addEventListener('resize', resize);
 resize();
 
 // ---------- 캐릭터 이미지 로딩 (없으면 내장 그림) ----------
-const charImgs = { left: null, right: null, shoot: null };
+const charImgs = { left: null, right: null, shoot: null, fly: null };
 function tryLoadImage(src) {
   return new Promise((res) => {
     const img = new Image();
@@ -75,6 +76,7 @@ function tryLoadImage(src) {
 }
 (async () => {
   charImgs.left = await tryLoadImage('assets/character/jump-left.png');
+  charImgs.fly = await tryLoadImage('assets/character/fly-left.png');
   charImgs.right = await tryLoadImage('assets/character/jump-right.png');
   charImgs.shoot = await tryLoadImage('assets/character/shoot.png');
 })();
@@ -661,12 +663,23 @@ function drawPlayer() {
     roundRect(-player.w / 2 - 10, -14, 12, 26, 4);
   }
 
-  const img = shootPose > 0 && charImgs.shoot
-    ? charImgs.shoot
-    : (player.facing === 'right' && charImgs.right) ? charImgs.right : charImgs.left;
+  // 포즈 선택: 발사 > 상승(뛰는 모습) > 기본
+  let img = null;
+  let flip = false;
+  const rising = player.vy < -1 || jetpackTimer > 0;
+  if (shootPose > 0 && charImgs.shoot) {
+    img = charImgs.shoot;
+  } else if (rising && charImgs.fly) {
+    img = charImgs.fly;
+    flip = player.facing === 'right';
+  } else if (player.facing === 'right' && charImgs.right) {
+    img = charImgs.right;
+  } else {
+    img = charImgs.left;
+    flip = player.facing === 'right' && !charImgs.right;
+  }
 
   if (img) {
-    const flip = !charImgs.right && player.facing === 'right' && !(shootPose > 0 && charImgs.shoot);
     if (flip) ctx.scale(-1, 1);
     ctx.drawImage(img, -player.w / 2, -player.h / 2, player.w, player.h);
   } else {
