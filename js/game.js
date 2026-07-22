@@ -109,6 +109,11 @@ const sfx = {
   coin: () => beep(1250, 0.06, 'square', 0.1),
   buy: () => beep(950, 0.12, 'square', 0.12),
   revive: () => beep(640, 0.3, 'square', 0.15),
+  bonus: () => {
+    beep(660, 0.12, 'square', 0.14);
+    setTimeout(() => beep(880, 0.12, 'square', 0.14), 110);
+    setTimeout(() => beep(1100, 0.22, 'square', 0.15), 220);
+  },
 };
 
 // ---------- 저장 데이터 (지갑/인벤토리) ----------
@@ -121,6 +126,111 @@ try {
 
 function saveWallet() { localStorage.setItem('jump-coins', String(wallet)); }
 function saveInv() { localStorage.setItem('jump-inv', JSON.stringify(inv)); }
+
+// ---------- 미션 시스템 ----------
+// 미션을 완수하면 보너스 타임: 제트팩을 타고 무적 상태로 상승!
+const BONUS_JETPACK = 210;   // 보너스 비행 프레임
+const BONUS_INVINCIBLE = 270;
+
+const MISSION_DEFS = [
+  {
+    id: 'fresh10', minScore: 0, text: '새 발판 10개 연속 밟기',
+    init: () => ({ n: 0 }),
+    onLand(s, p, info) { s.n = info.fresh ? s.n + 1 : 0; },
+    prog: (s) => `${s.n}/10`, done: (s) => s.n >= 10,
+  },
+  {
+    id: 'coins10', minScore: 0, text: '코인 10개 모으기',
+    init: () => ({ n: 0 }),
+    onCoin(s) { s.n++; },
+    prog: (s) => `${s.n}/10`, done: (s) => s.n >= 10,
+  },
+  {
+    id: 'spring2', minScore: 0, text: '스프링 2번 타기',
+    init: () => ({ n: 0 }),
+    onLand(s, p, info) { if (info.spring) s.n++; },
+    prog: (s) => `${s.n}/2`, done: (s) => s.n >= 2,
+  },
+  {
+    id: 'shoot5', minScore: 0, text: '총알 5발 쏘기',
+    init: () => ({ n: 0 }),
+    onShoot(s) { s.n++; },
+    prog: (s) => `${s.n}/5`, done: (s) => s.n >= 5,
+  },
+  {
+    id: 'rush', minScore: 0, text: '15초 안에 700점 오르기',
+    init: () => ({ t: 900, base: null, ok: false }),
+    tick(s) {
+      if (s.base === null) s.base = score;
+      s.t--;
+      if (score - s.base >= 700) s.ok = true;
+      else if (s.t <= 0) { s.t = 900; s.base = score; } // 실패하면 자동 재도전
+    },
+    prog: (s) => `${Math.max(0, score - (s.base ?? score))}/700 · ${Math.ceil(Math.max(s.t, 0) / 60)}초`,
+    done: (s) => s.ok,
+  },
+  {
+    id: 'blue3', minScore: 1000, text: '파란 발판 3번 밟기',
+    init: () => ({ n: 0 }),
+    onLand(s, p) { if (p.type === PlatType.MOVING) s.n++; },
+    prog: (s) => `${s.n}/3`, done: (s) => s.n >= 3,
+  },
+  {
+    id: 'white3', minScore: 1000, text: '흰 발판 3번 밟기',
+    init: () => ({ n: 0 }),
+    onLand(s, p) { if (p.type === PlatType.ONESHOT) s.n++; },
+    prog: (s) => `${s.n}/3`, done: (s) => s.n >= 3,
+  },
+  {
+    id: 'colors', minScore: 1500, text: '초록·파랑·흰 발판 모두 밟기',
+    init: () => ({ got: {} }),
+    onLand(s, p) { s.got[p.type] = true; },
+    prog(s) {
+      const n = [PlatType.NORMAL, PlatType.MOVING, PlatType.ONESHOT].filter((t) => s.got[t]).length;
+      return `${n}/3`;
+    },
+    done(s) {
+      return [PlatType.NORMAL, PlatType.MOVING, PlatType.ONESHOT].every((t) => s.got[t]);
+    },
+  },
+  {
+    id: 'monster1', minScore: 1800, text: '몬스터 1마리 처치',
+    init: () => ({ n: 0 }),
+    onKill(s) { s.n++; },
+    prog: (s) => `${s.n}/1`, done: (s) => s.n >= 1,
+  },
+];
+
+let mission = null;        // { def, s }
+let missionCooldown = 0;   // 다음 미션까지 남은 프레임
+let missionFlash = 0;      // 성공 배너 표시 프레임
+let lastMissionId = null;
+let landedSet = null;      // 이번 판에 밟아본 발판들
+
+function pickMission() {
+  const cands = MISSION_DEFS.filter((m) => score >= m.minScore && m.id !== lastMissionId);
+  const def = cands[Math.floor(Math.random() * cands.length)];
+  mission = { def, s: def.init() };
+}
+
+function missionEvent(type, ...args) {
+  if (!mission) return;
+  const h = mission.def['on' + type];
+  if (!h) return;
+  h(mission.s, ...args);
+  if (mission.def.done(mission.s)) completeMission();
+}
+
+function completeMission() {
+  lastMissionId = mission.def.id;
+  mission = null;
+  missionFlash = 140;
+  missionCooldown = 420;
+  jetpackTimer = Math.max(jetpackTimer, 0) + BONUS_JETPACK;
+  invincible = Math.max(invincible, BONUS_INVINCIBLE);
+  sfx.bonus();
+  addBurst(player.x, player.y, '#f1c40f');
+}
 
 // ---------- 게임 상태 ----------
 const State = { MENU: 0, PLAYING: 1, PAUSED: 2, OVER: 3, COUNTDOWN: 4 };
@@ -221,6 +331,13 @@ function newGame() {
   jetpackTimer = 0;
   shootPose = 0;
   frame = 0;
+
+  // 미션 초기화
+  mission = null;
+  missionCooldown = 150; // 시작 2.5초 후 첫 미션 등장
+  missionFlash = 0;
+  lastMissionId = null;
+  landedSet = new Set();
 
   // 들고 들어가는 아이템: 생명은 보유분 그대로, 로켓/자석은 있으면 1개 자동 사용
   lives = inv.life;
@@ -324,6 +441,7 @@ function shoot() {
   bullets.push({ x: player.x, y: player.y - player.h / 2, vy: BULLET_VY });
   shootPose = 20;
   sfx.shoot();
+  missionEvent('Shoot');
 }
 
 // ---------- 죽음 처리: 생명이 있으면 부활 ----------
@@ -394,6 +512,7 @@ function update() {
           continue; // 튕기지 않고 통과
         }
         player.y = p.y - player.h / 2;
+        const usedSpring = !p.jetpack && p.spring;
         if (p.jetpack) {
           p.jetpack = false;
           jetpackTimer = JETPACK_TIME;
@@ -406,6 +525,10 @@ function update() {
           sfx.jump();
         }
         if (p.type === PlatType.ONESHOT) p.broken = true;
+        // 미션 훅: 처음 밟는 발판인지 + 스프링 여부
+        const fresh = !landedSet.has(p);
+        landedSet.add(p);
+        missionEvent('Land', p, { fresh, spring: usedSpring });
         break;
       }
     }
@@ -440,6 +563,7 @@ function update() {
       saveWallet();
       sfx.coin();
       particles.push({ x: c.x, y: c.y, vx: 0, vy: -1.5, life: 18, color: '#f1c40f' });
+      missionEvent('Coin');
     }
   }
   coinsArr = coinsArr.filter((c) => !c.taken && c.y < cameraY + H + 40);
@@ -462,6 +586,7 @@ function update() {
         player.vy = JUMP_VY;
         sfx.hit();
         addBurst(m.x, m.y, '#9b59b6');
+        missionEvent('Kill');
       } else {
         m.dead = true; // 부활 직후 같은 몬스터에 또 죽지 않게 제거
         addBurst(m.x, m.y, '#9b59b6');
@@ -480,6 +605,7 @@ function update() {
         b.y = -9999;
         sfx.hit();
         addBurst(m.x, m.y, '#9b59b6');
+        missionEvent('Kill');
       }
     }
   }
@@ -506,6 +632,16 @@ function update() {
   while (highestPlatY > cameraY - 100) spawnPlatformRow();
   platforms = platforms.filter((p) => p.y < cameraY + H + 60 && !(p.broken && p.breakAnim > 30));
   monsters = monsters.filter((m) => m.y < cameraY + H + 80 && !m.dead);
+
+  // --- 미션 진행 ---
+  if (missionFlash > 0) missionFlash--;
+  if (!mission) {
+    if (missionCooldown > 0) missionCooldown--;
+    else pickMission();
+  } else if (mission.def.tick) {
+    mission.def.tick(mission.s);
+    if (mission.def.done(mission.s)) completeMission();
+  }
 
   // --- 낙사 ---
   if (player.y > cameraY + H + player.h) {
@@ -652,8 +788,8 @@ function drawPlayer() {
   ctx.save();
   ctx.translate(x, y);
 
-  // 부활 무적: 깜빡임
-  if (invincible > 0 && Math.floor(invincible / 6) % 2 === 0) {
+  // 부활 무적: 깜빡임 (보너스 비행 중에는 깜빡이지 않음)
+  if (invincible > 0 && jetpackTimer <= 0 && Math.floor(invincible / 6) % 2 === 0) {
     ctx.globalAlpha = 0.35;
   }
 
@@ -825,9 +961,47 @@ function draw() {
     ctx.font = '800 15px sans-serif';
     ctx.fillStyle = '#b7791f';
     ctx.fillText('🪙 ' + runCoins, 18, 63);
+
+    // 미션 바 (상단 전체 폭)
+    if (mission) {
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      roundRect(8, 84, W - 16, 28, 14);
+      ctx.fillStyle = '#6c3fb5';
+      ctx.font = '800 14px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('🎯 ' + mission.def.text, 20, 98);
+      ctx.textAlign = 'right';
+      ctx.fillText(mission.def.prog(mission.s), W - 20, 98);
+      ctx.textAlign = 'left';
+    }
+
     if (lives > 0) {
       ctx.font = '15px sans-serif';
-      ctx.fillText('❤️'.repeat(lives), 10, 92);
+      ctx.fillStyle = '#b7791f';
+      ctx.fillText('❤️'.repeat(lives), 10, mission ? 130 : 92);
+    }
+
+    // 미션 성공 배너
+    if (missionFlash > 0) {
+      const t = missionFlash / 140; // 1 → 0
+      const pop = 1 + Math.max(0, t - 0.85) * 3;
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, t * 3);
+      ctx.translate(W / 2, 210);
+      ctx.scale(pop, pop);
+      ctx.font = '900 30px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 6;
+      ctx.strokeText('미션 성공!', 0, 0);
+      ctx.fillStyle = '#e67e22';
+      ctx.fillText('미션 성공!', 0, 0);
+      ctx.font = '900 20px sans-serif';
+      ctx.strokeText('🚀 보너스 타임!', 0, 34);
+      ctx.fillStyle = '#8e44ad';
+      ctx.fillText('🚀 보너스 타임!', 0, 34);
+      ctx.restore();
     }
   }
 
