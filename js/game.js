@@ -31,8 +31,15 @@ const BULLET_VY = -12;
 const COIN_R = 9;              // 코인 반지름
 const MAGNET_RANGE = 110;      // 자석 흡인 범위
 const REVIVE_INVINCIBLE = 180; // 부활 후 무적 프레임
-const PRICES = { life: 150, rocket: 50, magnet: 75, hat: 300, scarf: 250, glasses: 400 };
-const MAX_OWN = { life: 3, rocket: 9, magnet: 9, hat: 1, scarf: 1, glasses: 1 };
+const PRICES = {
+  life: 150, rocket: 50, magnet: 75,
+  bow: 200, hat: 300, glasses: 400, headphones: 450,
+  tophat: 500, crown: 600, scarf: 250, cape: 700, wings: 800,
+};
+const MAX_OWN = {
+  life: 3, rocket: 9, magnet: 9,
+  bow: 1, hat: 1, glasses: 1, headphones: 1, tophat: 1, crown: 1, scarf: 1, cape: 1, wings: 1,
+};
 
 // ---------- 발판 ----------
 const PLAT_W = 62;
@@ -119,7 +126,10 @@ const sfx = {
 // ---------- 저장 데이터 (지갑/인벤토리) ----------
 let best = Number(localStorage.getItem('jump-best') || 0);
 let wallet = Number(localStorage.getItem('jump-coins') || 0);
-let inv = { life: 0, rocket: 0, magnet: 0, hat: 0, scarf: 0, glasses: 0 };
+let inv = {
+  life: 0, rocket: 0, magnet: 0,
+  hat: 0, scarf: 0, glasses: 0, bow: 0, headphones: 0, tophat: 0, crown: 0, cape: 0, wings: 0,
+};
 try {
   inv = Object.assign(inv, JSON.parse(localStorage.getItem('jump-inv') || '{}'));
 } catch (e) { /* 손상된 저장값은 무시 */ }
@@ -168,8 +178,16 @@ function checkAchievements() {
 }
 
 // ---------- 꾸미기 (액세서리) ----------
-const COSMETICS = ['hat', 'scarf', 'glasses'];
-let equip = { hat: false, scarf: false, glasses: false };
+// 슬롯: 같은 슬롯 아이템은 하나만 착용 가능
+const COSMETIC_SLOTS = {
+  hat: 'head', crown: 'head', tophat: 'head', bow: 'head', headphones: 'head',
+  glasses: 'face',
+  scarf: 'neck',
+  wings: 'back', cape: 'back',
+};
+const COSMETICS = Object.keys(COSMETIC_SLOTS);
+let equip = {};
+for (const k of COSMETICS) equip[k] = false;
 try { equip = Object.assign(equip, JSON.parse(localStorage.getItem('jump-equip') || '{}')); } catch (e) {}
 function saveEquip() { localStorage.setItem('jump-equip', JSON.stringify(equip)); }
 
@@ -179,18 +197,40 @@ function vib(ms) {
 }
 
 // ---------- 배경음악 (칩튠 루프) ----------
+// 32스텝 시퀀서: 멜로디(사각파) + 베이스(삼각파) + 하이 블립 퍼커션
 const bgm = {
   on: localStorage.getItem('jump-bgm') !== '0',
   timer: null,
   step: 0,
-  MEL: [523, 659, 784, 659, 587, 698, 880, 698, 523, 659, 784, 880, 784, 698, 659, 587],
-  BASS: [131, 131, 147, 147, 165, 165, 147, 131],
+  // 0 = 쉼표. 경쾌한 C장조 루프
+  MEL: [
+    523, 0, 659, 784, 659, 0, 523, 659,
+    587, 0, 698, 880, 698, 0, 587, 698,
+    523, 0, 659, 784, 1047, 0, 784, 659,
+    698, 659, 587, 523, 659, 0, 523, 0,
+  ],
+  BASS: [
+    131, 0, 131, 0, 175, 0, 175, 0,
+    147, 0, 147, 0, 196, 0, 196, 0,
+    131, 0, 131, 0, 175, 0, 175, 0,
+    196, 0, 165, 0, 131, 0, 131, 0,
+  ],
   start() {
     if (!this.on || this.timer) return;
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    } catch (e) { return; }
     this.timer = setInterval(() => {
       const i = this.step++;
-      if (i % 2 === 0) beep(this.BASS[(i >> 1) % 8], 0.16, 'triangle', 0.045);
-      beep(this.MEL[i % 16], 0.09, 'square', 0.028);
+      const m = this.MEL[i % 32];
+      const b = this.BASS[i % 32];
+      if (m) {
+        beep(m, 0.16, 'square', 0.075);
+        beep(m * 2, 0.16, 'square', 0.018); // 옥타브 위 살짝 겹쳐 풍성하게
+      }
+      if (b) beep(b, 0.3, 'triangle', 0.11);
+      if (i % 4 === 2) beep(2093, 0.03, 'square', 0.02); // 퍼커션 블립
     }, 150);
   },
   stop() {
@@ -1594,18 +1634,60 @@ function drawPlayer() {
 
   if (img) {
     if (flip) ctx.scale(-1, 1);
+    drawAccessoriesBack();
     ctx.drawImage(img, -player.w / 2, -player.h / 2, player.w, player.h);
-    drawAccessories();
+    drawAccessoriesFront();
   } else {
     drawDefaultCharacter();
   }
   ctx.restore();
 }
 
-// 구매한 액세서리 (사이드뷰 머리 위치 기준, 좌우반전은 ctx가 처리)
-function drawAccessories() {
+const wearing = (item) => equip[item] && inv[item];
+
+// 등 뒤 아이템 (캐릭터보다 먼저 그림)
+function drawAccessoriesBack() {
+  if (wearing('wings')) {
+    // 천사 날개: 위아래로 팔랑
+    const f = Math.sin(frame * 0.25) * 3;
+    ctx.save();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.strokeStyle = 'rgba(180, 190, 210, 0.9)';
+    ctx.lineWidth = 1.4;
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(side * 15, -6 + f * 0.4, 12, 5.5, side * -0.7, 0, Math.PI * 2);
+      ctx.ellipse(side * 19, -1 + f * 0.7, 10, 4.5, side * -0.85, 0, Math.PI * 2);
+      ctx.ellipse(side * 21, 4 + f, 8, 3.6, side * -1.0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  if (wearing('cape')) {
+    // 망토: 뒤로 휘날림 (기본 왼쪽을 보므로 오른쪽 뒤로)
+    const wave = Math.sin(frame * 0.18) * 4;
+    ctx.save();
+    const g = ctx.createLinearGradient(2, -8, 22, 16);
+    g.addColorStop(0, '#e74c3c');
+    g.addColorStop(1, '#a93226');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(0, -6);
+    ctx.quadraticCurveTo(16, -4 + wave * 0.4, 22, 8 + wave);
+    ctx.quadraticCurveTo(17, 15 + wave * 0.6, 12, 12 + wave * 0.5);
+    ctx.quadraticCurveTo(9, 16 + wave * 0.3, 5, 12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+// 앞쪽 아이템 (캐릭터 위에 그림 · 사이드뷰 머리 기준, 좌우반전은 ctx가 처리)
+function drawAccessoriesFront() {
   const hx = -9, hy = -14; // 머리 대략 위치
-  if (equip.hat && inv.hat) {
+
+  if (wearing('hat')) {
     ctx.fillStyle = '#e74c3c';
     ctx.beginPath();
     ctx.arc(hx, hy - 5, 8, Math.PI, 0);
@@ -1614,7 +1696,75 @@ function drawAccessories() {
     ctx.fillStyle = '#c0392b';
     ctx.fillRect(hx - 15, hy - 5, 9, 2.6); // 챙 (보는 방향 쪽)
   }
-  if (equip.glasses && inv.glasses) {
+  if (wearing('crown')) {
+    ctx.fillStyle = '#f1c40f';
+    ctx.strokeStyle = '#c29d0b';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(hx - 8, hy - 4);
+    ctx.lineTo(hx - 8, hy - 12);
+    ctx.lineTo(hx - 4, hy - 7);
+    ctx.lineTo(hx, hy - 14);
+    ctx.lineTo(hx + 4, hy - 7);
+    ctx.lineTo(hx + 8, hy - 12);
+    ctx.lineTo(hx + 8, hy - 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#e74c3c';
+    ctx.beginPath();
+    ctx.arc(hx, hy - 8, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#3498db';
+    ctx.beginPath();
+    ctx.arc(hx - 5, hy - 6.5, 1.2, 0, Math.PI * 2);
+    ctx.arc(hx + 5, hy - 6.5, 1.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (wearing('tophat')) {
+    ctx.fillStyle = '#2d3436';
+    ctx.fillRect(hx - 7, hy - 18, 14, 12);
+    ctx.fillRect(hx - 11, hy - 7, 22, 3);
+    ctx.fillStyle = '#6c5ce7';
+    ctx.fillRect(hx - 7, hy - 9, 14, 3); // 보라 띠
+  }
+  if (wearing('bow')) {
+    ctx.fillStyle = '#fd79a8';
+    ctx.strokeStyle = '#e84393';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(hx, hy - 8);
+    ctx.lineTo(hx - 8, hy - 13);
+    ctx.lineTo(hx - 8, hy - 3);
+    ctx.closePath();
+    ctx.moveTo(hx, hy - 8);
+    ctx.lineTo(hx + 8, hy - 13);
+    ctx.lineTo(hx + 8, hy - 3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#e84393';
+    ctx.beginPath();
+    ctx.arc(hx, hy - 8, 2.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (wearing('headphones')) {
+    ctx.strokeStyle = '#e17055';
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.arc(hx, hy - 1, 10, Math.PI * 1.05, Math.PI * 1.95); // 머리띠
+    ctx.stroke();
+    ctx.fillStyle = '#d63031';
+    ctx.beginPath();
+    ctx.ellipse(hx - 10, hy + 3, 3.4, 4.6, 0.2, 0, Math.PI * 2);
+    ctx.ellipse(hx + 10, hy + 3, 3.4, 4.6, -0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.beginPath();
+    ctx.ellipse(hx - 11, hy + 2, 1.2, 1.8, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (wearing('glasses')) {
     ctx.fillStyle = 'rgba(30,30,40,0.9)';
     ctx.beginPath();
     ctx.arc(hx - 7, hy + 6, 4, 0, Math.PI * 2);
@@ -1629,7 +1779,7 @@ function drawAccessories() {
     ctx.lineTo(hx + 13, hy + 3);
     ctx.stroke();
   }
-  if (equip.scarf && inv.scarf) {
+  if (wearing('scarf')) {
     ctx.fillStyle = '#e67e22';
     roundRect(-8, 1, 13, 5, 2.5);
     ctx.fillStyle = '#d35400';
@@ -2097,11 +2247,22 @@ function refreshShop() {
   });
 }
 
+function wearCosmetic(item, on) {
+  if (on) {
+    // 같은 슬롯의 다른 아이템은 자동 해제
+    const slot = COSMETIC_SLOTS[item];
+    for (const k of COSMETICS) {
+      if (COSMETIC_SLOTS[k] === slot) equip[k] = false;
+    }
+  }
+  equip[item] = on;
+  saveEquip();
+}
+
 function buyItem(item) {
   if (COSMETICS.includes(item) && inv[item]) {
     // 이미 보유: 착용 토글
-    equip[item] = !equip[item];
-    saveEquip();
+    wearCosmetic(item, !equip[item]);
     sfx.buy();
     refreshShop();
     return;
@@ -2109,7 +2270,7 @@ function buyItem(item) {
   if (wallet < PRICES[item] || inv[item] >= MAX_OWN[item]) return;
   wallet -= PRICES[item];
   inv[item]++;
-  if (COSMETICS.includes(item)) { equip[item] = true; saveEquip(); }
+  if (COSMETICS.includes(item)) wearCosmetic(item, true);
   saveWallet();
   saveInv();
   sfx.buy();
