@@ -957,13 +957,19 @@ function drawAnnounce() {
   ctx.fillStyle = 'rgba(255,255,255,0.92)';
   roundRect(W / 2 - pw / 2, py, pw, ph, 17);
   ctx.fillStyle = color;
-  ctx.textAlign = 'center';
+  // 가운데 정렬을 좌표로 직접 계산 — 일부 iOS 웹킷의 textAlign 어긋남까지 원천 차단
+  ctx.textAlign = 'left';
+  ctx.direction = 'ltr';
   ctx.textBaseline = 'middle';
+  const drawCentered = (line, yy) => {
+    const lw = ctx.measureText(line).width;
+    ctx.fillText(line, W / 2 - lw / 2, yy);
+  };
   if (lines.length > 1) {
-    ctx.fillText(lines[0], W / 2, py + 15);
-    ctx.fillText(lines[1], W / 2, py + 33);
+    drawCentered(lines[0], py + 15);
+    drawCentered(lines[1], py + 33);
   } else {
-    ctx.fillText(text, W / 2, py + 17.5);
+    drawCentered(text, py + 17.5);
   }
   ctx.restore();
 }
@@ -5679,7 +5685,7 @@ refreshMenu();
 loop();
 
 // ---------- 버전 표시 & 최신 버전 유도 ----------
-const GAME_VERSION = 49; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
+const GAME_VERSION = 50; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
 const verLabel = $('version-label');
 function setVerLabel(txt, cls) {
   if (!verLabel) return;
