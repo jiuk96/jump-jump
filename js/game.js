@@ -512,6 +512,7 @@ function completeMission() {
   flashSub = '🚀 보너스 타임!';
   missionCooldown = 420;
   jetpackTimer = Math.max(jetpackTimer, 0) + BONUS_JETPACK;
+  jetpackSlow = false;
   invincible = Math.max(invincible, BONUS_INVINCIBLE);
   sfx.bonus();
   vib(80);
@@ -528,6 +529,7 @@ function starPower() {
   flashMain = '⭐ 스타 파워!';
   flashSub = '무적 비행!';
   jetpackTimer = Math.max(jetpackTimer, 0) + STAR_FLIGHT;
+  jetpackSlow = false;
   invincible = Math.max(invincible, STAR_FLIGHT + 60);
   sfx.bonus();
   vib(80);
@@ -641,6 +643,11 @@ let closeStreak;       // 아슬아슬 연속 횟수
 let closeRewarded;     // 간발의 승부사 보상 (판당 1회)
 let boss;              // 미니보스
 let standPlat;         // 보스전: 서 있는 발판 (점프 정지)
+let ammo;              // 남은 총알 (탄창 10발)
+let reloading;         // 재장전 남은 프레임
+let jetpackSlow;       // 시작 로켓은 천천히 상승
+const AMMO_MAX = 10;
+const RELOAD_TIME = 95; // 약 1.6초
 let bossShots;         // 보스 투사체
 let nextBossAt;        // 다음 보스 등장 점수
 let seasonParts = [];  // 시즌 파티클 (꽃잎/낙엽)
@@ -793,6 +800,9 @@ function newGame() {
   bossShots = [];
   nextBossAt = 5000;
   standPlat = null;
+  ammo = AMMO_MAX;
+  reloading = 0;
+  jetpackSlow = false;
 
   // 들고 들어가는 아이템: 생명은 보유분 그대로, 로켓/자석은 있으면 1개 자동 사용
   lives = inv.life;
@@ -801,6 +811,7 @@ function newGame() {
     if (inv.rocket > 0) {
       inv.rocket--;
       jetpackTimer = JETPACK_TIME;
+      jetpackSlow = true; // 시작 로켓은 부드럽게 상승
       sfx.jetpack();
     }
     if (inv.magnet > 0) {
@@ -808,7 +819,10 @@ function newGame() {
       magnetActive = true;
     }
     saveInv();
-    if (upg.rocket > 0) jetpackTimer = Math.max(jetpackTimer, upg.rocket * 30); // 출발 부스트 강화
+    if (upg.rocket > 0) {
+      jetpackTimer = Math.max(jetpackTimer, upg.rocket * 30); // 출발 부스트 강화
+      jetpackSlow = true;
+    }
   }
 
   // 시작 발판: 바닥 근처에 촘촘히
@@ -918,14 +932,33 @@ function spawnPlatformRow() {
 
 // ---------- 발사 ----------
 function shoot() {
-  if (holdCannon) { // 대포 안이면 탄환 대신 대포 발사!
+  if (holdCannon) { // 대포 안이면 탄환 대신 대포 발사! (탄약 소모 없음)
     fireCannon();
     return;
   }
+  if (reloading > 0) { // 장전 중엔 빈 소리만
+    beep(180, 0.05, 'square', 0.08);
+    return;
+  }
+  if (ammo <= 0) {
+    startReload();
+    return;
+  }
+  ammo--;
   bullets.push({ x: player.x, y: player.y - player.h / 2, vy: BULLET_VY });
   shootPose = 20;
   sfx.shoot();
   missionEvent('Shoot');
+  if (ammo <= 0) startReload(); // 다 쓰면 자동 재장전
+  updateFireBtn();
+}
+
+function startReload() {
+  if (reloading > 0) return;
+  reloading = RELOAD_TIME;
+  beep(300, 0.08, 'triangle', 0.12);
+  setTimeout(() => beep(420, 0.08, 'triangle', 0.12), 160);
+  updateFireBtn();
 }
 
 // ---------- 보스 아레나 종료 ----------
@@ -1070,7 +1103,7 @@ function update() {
     // 대포 안/보스전 서기: 중력 없음
   } else if (jetpackTimer > 0) {
     jetpackTimer--;
-    player.vy = JETPACK_VY;
+    player.vy = JETPACK_VY * (jetpackSlow ? 0.65 : 1);
     if (frame % 3 === 0) {
       particles.push({
         x: player.x + rand(-6, 6), y: player.y + player.h / 2,
@@ -1110,6 +1143,7 @@ function update() {
         if (p.jetpack) {
           p.jetpack = false;
           jetpackTimer = JETPACK_TIME;
+          jetpackSlow = false;
           sfx.jetpack();
         } else if (p.spring) {
           player.vy = SPRING_VY;
@@ -1581,6 +1615,18 @@ function update() {
   while (highestPlatY > cameraY - 100) spawnPlatformRow();
   platforms = platforms.filter((p) => p.y < cameraY + H + 60 && !(p.broken && p.breakAnim > 30));
   monsters = monsters.filter((m) => m.y < cameraY + H + 80 && !m.dead);
+
+  // --- 재장전 ---
+  if (reloading > 0) {
+    reloading--;
+    if (reloading === 0) {
+      ammo = AMMO_MAX;
+      beep(650, 0.09, 'square', 0.12); // 철컥!
+      updateFireBtn();
+    } else if (frame % 6 === 0) {
+      updateFireBtn();
+    }
+  }
 
   // --- 미션 진행 ---
   if (missionFlash > 0) missionFlash--;
@@ -3047,6 +3093,15 @@ const shopScreen = $('shop-screen');
 const helpScreen = $('help-screen');
 const pauseBtn = $('btn-pause');
 const fireBtn = $('btn-fire');
+function updateFireBtn() {
+  if (reloading > 0) {
+    fireBtn.innerHTML = `⏳<span class="ammo">${Math.ceil((reloading / RELOAD_TIME) * 100)}%</span>`;
+    fireBtn.classList.add('reloading');
+  } else {
+    fireBtn.innerHTML = `🔫<span class="ammo">${ammo}</span>`;
+    fireBtn.classList.remove('reloading');
+  }
+}
 fireBtn.addEventListener('touchstart', (e) => {
   e.preventDefault();
   if (state === State.PLAYING) shoot();
@@ -3291,6 +3346,7 @@ function beginCountdown() {
   $('char-screen').classList.add('hidden');
   pauseBtn.classList.remove('hidden');
   fireBtn.classList.remove('hidden');
+  updateFireBtn();
   photoMode = false;
   bgm.start();
   if (tut) addFloat('좌우로 움직여 발판을 밟아요!', W / 2, 190, '#2c3e50', 16, true);
