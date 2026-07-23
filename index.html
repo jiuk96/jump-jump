@@ -36,8 +36,11 @@
         <button id="btn-help" class="btn-secondary">❓ 게임 방법</button>
       </div>
       <div class="btn-row">
-        <button id="btn-settings" class="btn-secondary">⚙️ 설정</button>
+        <button id="btn-me" class="btn-secondary">👤 내 정보</button>
         <button id="btn-dex" class="btn-secondary">📖 도감</button>
+      </div>
+      <div class="btn-row">
+        <button id="btn-settings" class="btn-secondary">⚙️ 설정</button>
       </div>
       <div class="control-select">
         <p class="control-title">조작 방법</p>
@@ -205,6 +208,15 @@
         </div>
       </div>
       <button id="btn-shop-back" class="btn-secondary">돌아가기</button>
+    </div>
+
+    <!-- 내 정보 화면 -->
+    <div id="me-screen" class="overlay hidden">
+      <h1 class="title small">👤 내 정보</h1>
+      <canvas id="me-preview" width="180" height="180" class="me-preview"></canvas>
+      <p id="me-name" class="me-name"></p>
+      <div id="me-info" class="me-info"></div>
+      <button id="btn-me-back" class="btn-secondary">돌아가기</button>
     </div>
 
     <!-- 설정 화면 -->
