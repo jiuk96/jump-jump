@@ -232,7 +232,7 @@ const ACHIEVEMENTS = [
   { id: 'runs50', name: '끈기의 둥이', desc: '50판 플레이', target: 50, get: (s) => s.runs, reward: 150 },
   { id: 'total100k', name: '마라토너', desc: '누적 100,000점 오르기', target: 100000, get: (s) => s.totalScore, reward: 300 },
   { id: 'revive3', name: '불사조', desc: '생명으로 3회 부활', target: 3, get: (s) => s.revives, reward: 100 },
-  { id: 'moon', name: '달 정복자', desc: '달에 착륙하기 (40,000점)', target: 1, get: (s) => (s.moon ? 1 : 0), reward: 500 },
+  { id: 'moon', name: '달 정복자', desc: '달에 착륙하기 (30,000점)', target: 1, get: (s) => (s.moon ? 1 : 0), reward: 500 },
 ];
 
 const achToast = []; // 달성 알림 대기열
@@ -722,9 +722,9 @@ const MILESTONES = [
   [8500, '🌤️ 성층권 진입!'],
   [13500, '🌌 우주 도달! 무중력 구간!'],
   [22000, '🪐 별들의 바다!'],
-  [34000, '🌕 달이 보인다!'],
+  [26000, '🌕 달이 보인다!'],
 ];
-const MOON_SCORE = 40000;
+const MOON_SCORE = 30000;
 const AMMO_MAX = 10;
 const RELOAD_TIME = 95; // 약 1.6초
 let bossShots;         // 보스 투사체
@@ -878,7 +878,7 @@ function newGame() {
   closeRewarded = false;
   boss = null;
   bossShots = [];
-  nextBossAt = 8000;
+  nextBossAt = 6000;
   standPlat = null;
   ammo = AMMO_MAX;
   reloading = 0;
@@ -1704,7 +1704,7 @@ function update() {
 
   // --- 미니보스: 5000점마다 등장 ---
   if (!boss && score >= nextBossAt) {
-    const tier = Math.round(nextBossAt / 8000);
+    const tier = Math.round(nextBossAt / 6000);
     const face = Math.min(tier, 4);
     boss = {
       tier,
@@ -1720,7 +1720,7 @@ function update() {
       wobble: 0,
     };
     addFloat(`👹 ${BOSS_FACES[face].name} 등장!`, W / 2, 230, '#c0392b', 19, true, 160);
-    nextBossAt += 8000;
+    nextBossAt += 6000;
     dexAdd('bossmon');
     // 보스 아레나: 일반 발판은 잠시 사라지고, 화면 전체를 덮는 일자 땅이 생긴다
     const floor = makePlatform(0, cameraY + 568, PlatType.NORMAL);
@@ -2884,152 +2884,172 @@ function drawPlayer() {
 
 const wearing = (item) => equip[item] && inv[item];
 
-// 등 뒤 아이템 (캐릭터보다 먼저 그림)
+// 사이드뷰 스프라이트의 머리 앵커 (왼쪽을 보는 기준, 좌우반전은 ctx가 처리)
+const HEADX = -9.5;   // 머리 중심 x
+const HEADY = -5;     // 머리 중심 y
+const HEADR = 8.4;    // 머리 반지름
+
+// 등 뒤 아이템 (캐릭터보다 먼저 그림 — 등쪽에서 나옴)
 function drawAccessoriesBack() {
   if (wearing('wings')) {
-    // 천사 날개: 위아래로 팔랑
-    const f = Math.sin(frame * 0.25) * 3;
+    // 천사 날개: 등(오른쪽 뒤)에서 위로 펼쳐져 팔랑임
+    const f = Math.sin(frame * 0.22) * 2.5;
     ctx.save();
     ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-    ctx.strokeStyle = 'rgba(180, 190, 210, 0.9)';
-    ctx.lineWidth = 1.4;
-    for (const side of [-1, 1]) {
-      ctx.beginPath();
-      ctx.ellipse(side * 15, -6 + f * 0.4, 12, 5.5, side * -0.7, 0, Math.PI * 2);
-      ctx.ellipse(side * 19, -1 + f * 0.7, 10, 4.5, side * -0.85, 0, Math.PI * 2);
-      ctx.ellipse(side * 21, 4 + f, 8, 3.6, side * -1.0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    }
+    ctx.strokeStyle = 'rgba(185, 195, 214, 0.9)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.ellipse(8, -8 + f * 0.5, 10, 4.6, -0.85, 0, Math.PI * 2);
+    ctx.ellipse(12, -3 + f * 0.8, 8.5, 4, -0.6, 0, Math.PI * 2);
+    ctx.ellipse(14, 2 + f, 7, 3.4, -0.35, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
     ctx.restore();
   }
   if (wearing('cape')) {
-    // 망토: 뒤로 휘날림 (기본 왼쪽을 보므로 오른쪽 뒤로)
-    const wave = Math.sin(frame * 0.18) * 4;
+    // 망토: 목 뒤에서 등 뒤로 휘날림
+    const wave = Math.sin(frame * 0.18) * 3.5;
     ctx.save();
-    const g = ctx.createLinearGradient(2, -8, 22, 16);
+    const g = ctx.createLinearGradient(2, -8, 22, 14);
     g.addColorStop(0, '#e74c3c');
     g.addColorStop(1, '#a93226');
     ctx.fillStyle = g;
     ctx.beginPath();
-    ctx.moveTo(0, -6);
-    ctx.quadraticCurveTo(16, -4 + wave * 0.4, 22, 8 + wave);
-    ctx.quadraticCurveTo(17, 15 + wave * 0.6, 12, 12 + wave * 0.5);
-    ctx.quadraticCurveTo(9, 16 + wave * 0.3, 5, 12);
+    ctx.moveTo(-2, -7);
+    ctx.quadraticCurveTo(14, -5 + wave * 0.4, 21, 7 + wave);
+    ctx.quadraticCurveTo(16, 13 + wave * 0.6, 11, 10 + wave * 0.5);
+    ctx.quadraticCurveTo(8, 14 + wave * 0.3, 4, 10);
     ctx.closePath();
     ctx.fill();
     ctx.restore();
   }
 }
 
-// 앞쪽 아이템 (캐릭터 위에 그림 · 사이드뷰 머리 기준, 좌우반전은 ctx가 처리)
+// 앞쪽 아이템 (캐릭터 위에 그림 — 머리에 밀착)
 function drawAccessoriesFront() {
-  const hx = -9, hy = -14; // 머리 대략 위치
-
   if (wearing('hat')) {
+    // 야구모자: 머리 윗면을 감싸는 돔 + 진행 방향 챙
     ctx.fillStyle = '#e74c3c';
     ctx.beginPath();
-    ctx.arc(hx, hy - 5, 8, Math.PI, 0);
+    ctx.arc(HEADX, HEADY - 2.5, HEADR * 0.96, Math.PI, 0);
     ctx.fill();
-    ctx.fillRect(hx - 8, hy - 6, 16, 3);
     ctx.fillStyle = '#c0392b';
-    ctx.fillRect(hx - 15, hy - 5, 9, 2.6); // 챙 (보는 방향 쪽)
+    roundRect(HEADX - HEADR - 6, HEADY - 4.6, 7.5, 2.6, 1.2); // 챙
+    ctx.fillStyle = '#a93226';
+    ctx.beginPath();
+    ctx.arc(HEADX, HEADY - 10.6, 1.4, 0, Math.PI * 2); // 꼭지 단추
+    ctx.fill();
   }
   if (wearing('crown')) {
+    // 왕관: 정수리에 딱 얹힘
+    const by = HEADY - HEADR + 0.5; // 왕관 밑변
     ctx.fillStyle = '#f1c40f';
     ctx.strokeStyle = '#c29d0b';
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 0.9;
     ctx.beginPath();
-    ctx.moveTo(hx - 8, hy - 4);
-    ctx.lineTo(hx - 8, hy - 12);
-    ctx.lineTo(hx - 4, hy - 7);
-    ctx.lineTo(hx, hy - 14);
-    ctx.lineTo(hx + 4, hy - 7);
-    ctx.lineTo(hx + 8, hy - 12);
-    ctx.lineTo(hx + 8, hy - 4);
+    ctx.moveTo(HEADX - 6, by);
+    ctx.lineTo(HEADX - 6, by - 6);
+    ctx.lineTo(HEADX - 3, by - 2.5);
+    ctx.lineTo(HEADX, by - 7.5);
+    ctx.lineTo(HEADX + 3, by - 2.5);
+    ctx.lineTo(HEADX + 6, by - 6);
+    ctx.lineTo(HEADX + 6, by);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = '#e74c3c';
     ctx.beginPath();
-    ctx.arc(hx, hy - 8, 1.6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#3498db';
-    ctx.beginPath();
-    ctx.arc(hx - 5, hy - 6.5, 1.2, 0, Math.PI * 2);
-    ctx.arc(hx + 5, hy - 6.5, 1.2, 0, Math.PI * 2);
+    ctx.arc(HEADX, by - 3.5, 1.2, 0, Math.PI * 2);
     ctx.fill();
   }
   if (wearing('tophat')) {
+    // 실크햇: 정수리 위 원기둥 + 챙
+    const by = HEADY - HEADR + 1;
     ctx.fillStyle = '#2d3436';
-    ctx.fillRect(hx - 7, hy - 18, 14, 12);
-    ctx.fillRect(hx - 11, hy - 7, 22, 3);
+    ctx.fillRect(HEADX - 5, by - 9.5, 10, 9.5);
+    roundRect(HEADX - 8, by - 1, 16, 2.4, 1.2);
     ctx.fillStyle = '#6c5ce7';
-    ctx.fillRect(hx - 7, hy - 9, 14, 3); // 보라 띠
+    ctx.fillRect(HEADX - 5, by - 3.2, 10, 2.2); // 보라 띠
   }
   if (wearing('bow')) {
+    // 리본: 정수리 뒤쪽에 살짝
+    const bx = HEADX + 3.5, by = HEADY - HEADR - 0.5;
     ctx.fillStyle = '#fd79a8';
     ctx.strokeStyle = '#e84393';
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 0.9;
     ctx.beginPath();
-    ctx.moveTo(hx, hy - 8);
-    ctx.lineTo(hx - 8, hy - 13);
-    ctx.lineTo(hx - 8, hy - 3);
+    ctx.moveTo(bx, by);
+    ctx.lineTo(bx - 5.5, by - 4);
+    ctx.lineTo(bx - 5.5, by + 3);
     ctx.closePath();
-    ctx.moveTo(hx, hy - 8);
-    ctx.lineTo(hx + 8, hy - 13);
-    ctx.lineTo(hx + 8, hy - 3);
+    ctx.moveTo(bx, by);
+    ctx.lineTo(bx + 5.5, by - 4);
+    ctx.lineTo(bx + 5.5, by + 3);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = '#e84393';
     ctx.beginPath();
-    ctx.arc(hx, hy - 8, 2.4, 0, Math.PI * 2);
+    ctx.arc(bx, by, 1.8, 0, Math.PI * 2);
     ctx.fill();
   }
   if (wearing('headphones')) {
+    // 헤드폰: 머리를 넘는 밴드 + 귀 위치의 이어컵 (사이드뷰라 한쪽)
     ctx.strokeStyle = '#e17055';
-    ctx.lineWidth = 2.6;
+    ctx.lineWidth = 2.2;
     ctx.beginPath();
-    ctx.arc(hx, hy - 1, 10, Math.PI * 1.05, Math.PI * 1.95); // 머리띠
+    ctx.arc(HEADX, HEADY, HEADR + 0.8, Math.PI * 1.08, Math.PI * 1.92);
     ctx.stroke();
+    const cx2 = HEADX + 4.5, cy2 = HEADY + 1.5; // 귀(뺨 뒤) 위치
     ctx.fillStyle = '#d63031';
     ctx.beginPath();
-    ctx.ellipse(hx - 10, hy + 3, 3.4, 4.6, 0.2, 0, Math.PI * 2);
-    ctx.ellipse(hx + 10, hy + 3, 3.4, 4.6, -0.2, 0, Math.PI * 2);
+    ctx.ellipse(cx2, cy2, 3, 3.8, -0.15, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,0.5)';
     ctx.beginPath();
-    ctx.ellipse(hx - 11, hy + 2, 1.2, 1.8, 0.2, 0, Math.PI * 2);
+    ctx.ellipse(cx2 - 1, cy2 - 1.2, 1, 1.4, -0.15, 0, Math.PI * 2);
     ctx.fill();
   }
   if (wearing('glasses')) {
-    ctx.fillStyle = 'rgba(30,30,40,0.9)';
+    // 선글라스 (사이드뷰): 눈 위 렌즈 하나 + 귀로 넘어가는 다리
+    const ex = -13.5, ey = -6.5;
+    ctx.fillStyle = 'rgba(28, 28, 38, 0.92)';
+    ctx.strokeStyle = 'rgba(15, 15, 22, 0.95)';
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.arc(hx - 7, hy + 6, 4, 0, Math.PI * 2);
-    ctx.arc(hx + 3, hy + 6, 4, 0, Math.PI * 2);
+    ctx.ellipse(ex, ey, 4, 3.4, -0.1, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(30,30,40,0.9)';
-    ctx.lineWidth = 1.4;
-    ctx.beginPath();
-    ctx.moveTo(hx - 3, hy + 6);
-    ctx.lineTo(hx - 1, hy + 6);
-    ctx.moveTo(hx + 7, hy + 5);
-    ctx.lineTo(hx + 13, hy + 3);
     ctx.stroke();
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(ex + 3.8, ey - 0.8);
+    ctx.lineTo(HEADX + 6, HEADY - 1.5); // 귀로 가는 다리
+    ctx.moveTo(ex - 4, ey - 0.6);
+    ctx.lineTo(ex - 6.2, ey + 0.6); // 코 걸이
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(ex - 1.2, ey - 1.2, 1.4, 1, -0.3, 0, Math.PI * 2);
+    ctx.fill();
   }
   if (wearing('scarf')) {
+    // 목도리: 목을 감싸는 띠 + 늘어진 자락
     ctx.fillStyle = '#e67e22';
-    roundRect(-8, 1, 13, 5, 2.5);
+    ctx.save();
+    ctx.translate(-4.5, 1.5);
+    ctx.rotate(0.12);
+    roundRect(-5.5, -2.2, 11, 4.4, 2.2);
+    ctx.restore();
     ctx.fillStyle = '#d35400';
-    roundRect(-3, 5, 5, 9, 2.5); // 늘어진 자락
+    roundRect(-7.5, 3.5, 4, 8, 2);
+    ctx.fillStyle = '#e67e22';
+    roundRect(-7, 9.5, 3, 2.4, 1.2); // 자락 끝단
   }
 }
 
-// 내장 임시 캐릭터: 동글동글한 초록 캐릭터
+// 내장 임시 캐릭터 (이미지 로딩 전 폴백): 동글동글한 초록 캐릭터
 function drawDefaultCharacter() {
   const dir = player.facing === 'right' ? 1 : -1;
-  // 몸통
   ctx.fillStyle = '#a3d977';
   ctx.strokeStyle = '#6ab04c';
   ctx.lineWidth = 2.5;
@@ -3037,13 +3057,11 @@ function drawDefaultCharacter() {
   ctx.ellipse(0, 2, 20, 18, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
-  // 발 (점프 자세)
   ctx.fillStyle = '#6ab04c';
   ctx.beginPath();
   ctx.ellipse(-9, 18, 6, 4, 0, 0, Math.PI * 2);
   ctx.ellipse(9, 18, 6, 4, 0, 0, Math.PI * 2);
   ctx.fill();
-  // 눈
   ctx.fillStyle = '#fff';
   ctx.beginPath();
   ctx.arc(dir * 6, -4, 6, 0, Math.PI * 2);
@@ -3054,13 +3072,6 @@ function drawDefaultCharacter() {
   ctx.arc(dir * 8, -4, 2.5, 0, Math.PI * 2);
   ctx.arc(dir * 15, -4, 2.2, 0, Math.PI * 2);
   ctx.fill();
-  // 코(발사 포즈면 위로 향한 입)
-  if (shootPose > 0) {
-    ctx.fillStyle = '#2c3e50';
-    ctx.beginPath();
-    ctx.ellipse(dir * 10, -12, 3, 5, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
 }
 
 function drawMonster(m) {
