@@ -2549,12 +2549,37 @@ function draw() {
 }
 
 // ---------- 루프 ----------
+// 고정 타임스텝: 화면 주사율(60/90/120Hz)과 무관하게 물리는 항상 초당 60회.
+// 120Hz 폰에서 게임이 2배 빨라지던 문제를 해결한다.
+const PHYSICS_STEP = 1000 / 60;
 let rafId = null;
-function loop() {
-  if (state === State.COUNTDOWN && performance.now() >= countdownUntil) {
+let lastTime = 0;
+let physicsAcc = 0;
+
+function loop(now) {
+  if (now === undefined) now = performance.now();
+  if (!lastTime) lastTime = now;
+  let dt = now - lastTime;
+  lastTime = now;
+  if (dt > 250) dt = 250; // 탭 전환 복귀 등 긴 공백은 무시
+
+  if (state === State.COUNTDOWN && now >= countdownUntil) {
     state = State.PLAYING;
+    physicsAcc = 0;
   }
-  if (state === State.PLAYING) update();
+  if (state === State.PLAYING) {
+    physicsAcc += dt;
+    let steps = 0;
+    while (physicsAcc >= PHYSICS_STEP && steps < 5) { // 한 번에 최대 5스텝 (렉 스파이럴 방지)
+      update();
+      physicsAcc -= PHYSICS_STEP;
+      steps++;
+      if (state !== State.PLAYING) break; // 게임오버 등 상태 변화 시 중단
+    }
+    if (steps === 5) physicsAcc = 0;
+  } else {
+    physicsAcc = 0;
+  }
   draw();
   rafId = requestAnimationFrame(loop);
 }
