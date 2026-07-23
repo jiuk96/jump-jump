@@ -1708,8 +1708,10 @@ function update() {
 
   // --- 보스전 서기: 발판 위에 고정, 가장자리 벗어나면 낙하 ---
   if (standPlat) {
-    if (!boss || standPlat.broken ||
-        player.x < standPlat.x - 8 || player.x > standPlat.x + standPlat.w + 8) {
+    // 아레나 전체 바닥에서는 좌우 끝 → 반대편으로 그대로 이어짐 (랩어라운드 유지)
+    const offEdge = !standPlat.arena &&
+      (player.x < standPlat.x - 8 || player.x > standPlat.x + standPlat.w + 8);
+    if (!boss || standPlat.broken || offEdge) {
       standPlat = null; // 발판을 벗어남 → 자유낙하
     } else {
       player.y = standPlat.y - player.h / 2;
