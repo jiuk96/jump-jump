@@ -5974,6 +5974,7 @@ function initRunner() {
     obstacles: [], pickups: [], gaps: [], craters: [],
     spawnT: 90, gapSafe: 0, starT: 0, hinted: false,
     vw: 640, rings: [], ship: null, clearT: 0,
+    lastCls: [], lastExt: 0, lastSpawnF: -999,
     stars: Array.from({ length: 60 }, () => ({
       x: Math.random() * 800, y: Math.random() * (R_GROUND - 60),
       r: Math.random() * 1.4 + 0.5, tw: Math.random() * Math.PI * 2, layer: Math.random() < 0.5 ? 0.15 : 0.4,
@@ -6136,35 +6137,57 @@ function updateRunner() {
         R.gaps.push({ x, w: rand(64, 104 + d * 40) * wMul });
         R.gapSafe = 80;
       };
-      // [필요 난이도, 가중치, 생성 함수, 추가 스폰 지연]
+      // 조작 요구 클래스: jump(점프 필수) · slide(슬라이드 필수) · nojump(점프 금지) · gap(구덩이)
+      // [필요 난이도, 가중치, 생성 함수, 추가 지연, 클래스들, 패턴 폭]
       const P = [
-        [0.00, 3.0, () => rock(sx), 0],
-        [0.08, 2.2, () => beam(sx), 0],
-        [0.12, 2.0, () => { rock(sx); rock(sx + 110 + d * 30); }, 14],       // 연속 점프
-        [0.20, 2.0, () => crystal(sx), 0],
-        [0.25, 2.0, () => gap(sx), 0],
-        [0.28, 1.8, () => { beam(sx); rock(sx + 165); }, 16],                // 슬라이드→점프
-        [0.32, 1.8, () => alien(sx), 0],
-        [0.38, 1.6, () => drone(sx), 0],                                     // 점프 금지 드론
-        [0.42, 1.5, () => { beam(sx); beam(sx + 185); }, 20],                // 이중 게이트
-        [0.48, 1.5, () => { gap(sx); rock(sx + 200); }, 18],                 // 구덩이→점프
-        [0.55, 1.4, () => { rock(sx); crystal(sx + 135); }, 16],             // 점프→더블 점프
-        [0.60, 1.4, () => meteor(sx + rand(-30, 60)), 0],                    // ☄️ 운석 낙하 (경고 후)
-        [0.68, 1.2, () => { alien(sx); beam(sx + 170); }, 20],               // 외계인→슬라이드
-        [0.76, 1.1, () => { drone(sx); rock(sx + 120); }, 18],               // 드론 밑 통과→점프
-        [0.85, 1.0, () => { rock(sx); rock(sx + 100); rock(sx + 200); }, 26], // 트리플 점프
-        [0.30, 1.4, () => { for (let i = 0; i < 10; i++) R.pickups.push({ x: sx + i * 32, y: R_GROUND - 58 - Math.sin(i * 0.85) * 44, kind: 'coin', spin: i }); }, 10], // 🌊 파도 코인
-        [0.52, 1.3, () => { meteor(sx); meteor(sx + 150); }, 24],                 // ☄️☄️ 운석 소나기
-        [0.62, 1.2, () => { alien(sx); alien(sx + 95); alien(sx + 190); }, 26],   // 👽 외계인 러시
-        [0.72, 1.1, () => { gap(sx); beam(sx + 215); }, 22],                      // 🕳️→슬라이드
+        [0.00, 3.0, () => rock(sx), 0, ['jump'], 30],
+        [0.08, 2.2, () => beam(sx), 0, ['slide'], 100],
+        [0.12, 2.0, () => { rock(sx); rock(sx + 120 + d * 40); }, 14, ['jump'], 190],   // 연속 점프
+        [0.20, 2.0, () => crystal(sx), 0, ['jump'], 30],
+        [0.25, 2.0, () => gap(sx), 0, ['gap'], 150],
+        [0.28, 1.8, () => { beam(sx); rock(sx + 210); }, 16, ['slide', 'jump'], 240],   // 슬라이드→점프
+        [0.32, 1.8, () => alien(sx), 0, ['jump'], 30],
+        [0.38, 1.6, () => drone(sx), 0, ['nojump'], 34],                                // 점프 금지 드론
+        [0.42, 1.5, () => { beam(sx); beam(sx + 185); }, 20, ['slide'], 290],           // 이중 게이트
+        [0.48, 1.5, () => { gap(sx); rock(sx + 280); }, 18, ['gap', 'jump'], 310],      // 구덩이→점프
+        [0.55, 1.4, () => { rock(sx); crystal(sx + 150); }, 16, ['jump'], 180],         // 점프→더블 점프
+        [0.60, 1.4, () => meteor(sx + rand(-30, 60)), 0, ['jump'], 90],                 // ☄️ 운석 (경고 후)
+        [0.68, 1.2, () => { alien(sx); beam(sx + 190); }, 20, ['jump', 'slide'], 290],  // 외계인→슬라이드
+        [0.76, 1.1, () => { drone(sx); rock(sx + 260); }, 18, ['nojump', 'jump'], 290], // 드론 통과→점프
+        [0.85, 1.0, () => { rock(sx); rock(sx + 110); rock(sx + 220); }, 26, ['jump'], 250], // 트리플 점프
+        [0.30, 1.4, () => { for (let i = 0; i < 10; i++) R.pickups.push({ x: sx + i * 32, y: R_GROUND - 58 - Math.sin(i * 0.85) * 44, kind: 'coin', spin: i }); }, 10, [], 320], // 🌊 파도 코인
+        [0.52, 1.3, () => { meteor(sx); meteor(sx + 180); }, 24, ['jump'], 270],        // ☄️☄️ 운석 소나기
+        [0.62, 1.2, () => { alien(sx); alien(sx + 130); alien(sx + 260); }, 26, ['jump'], 290], // 👽 러시
+        [0.72, 1.1, () => { gap(sx); beam(sx + 260); }, 22, ['gap', 'slide'], 360],     // 🕳️→슬라이드
       ];
-      const pool = P.filter((pt) => d >= pt[0]);
-      let total = 0;
-      for (const pt of pool) total += pt[1];
-      let pick = Math.random() * total;
-      for (const pt of pool) {
-        pick -= pt[1];
-        if (pick <= 0) { pt[2](); R.spawnT += pt[3]; break; }
+      // ⚔️ 상충 규칙: 이 조합이 가까이 붙으면 회피 불가 → 안전거리 확보 전엔 금지
+      const clash = (a, b) =>
+        (a === 'nojump' && (b === 'jump' || b === 'gap')) ||
+        (b === 'nojump' && (a === 'jump' || a === 'gap')) ||
+        (a === 'gap' && b === 'slide') || (b === 'gap' && a === 'slide');
+      const SAFE_PX = 260; // 반응·착지에 필요한 최소 거리
+      const gapPx = Math.max(0, (frame - R.lastSpawnF) * spd - R.lastExt);
+      let pool = P.filter((pt) => d >= pt[0]);
+      if (gapPx < SAFE_PX && R.lastCls.length) {
+        pool = pool.filter((pt) => !pt[4].some((c) => R.lastCls.some((lc) => clash(c, lc))));
+      }
+      if (!pool.length) {
+        R.spawnT = 16; // 안전거리 확보 후 재시도
+      } else {
+        let total = 0;
+        for (const pt of pool) total += pt[1];
+        let pick = Math.random() * total;
+        for (const pt of pool) {
+          pick -= pt[1];
+          if (pick <= 0) {
+            pt[2]();
+            R.spawnT += pt[3];
+            R.lastCls = pt[4];
+            R.lastExt = pt[5];
+            R.lastSpawnF = frame;
+            break;
+          }
+        }
       }
     }
   }
@@ -7103,7 +7126,7 @@ $('mp-reset').addEventListener('click', () => {
 });
 
 // ---------- 버전 표시 & 최신 버전 유도 ----------
-const GAME_VERSION = 62; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
+const GAME_VERSION = 63; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
 const verLabel = $('version-label');
 function setVerLabel(txt, cls) {
   if (!verLabel) return;
