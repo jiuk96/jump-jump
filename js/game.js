@@ -798,7 +798,7 @@ function newGame() {
   closeRewarded = false;
   boss = null;
   bossShots = [];
-  nextBossAt = 5000;
+  nextBossAt = 8000;
   standPlat = null;
   ammo = AMMO_MAX;
   reloading = 0;
@@ -1423,7 +1423,7 @@ function update() {
 
   // --- 미니보스: 5000점마다 등장 ---
   if (!boss && score >= nextBossAt) {
-    const tier = Math.round(nextBossAt / 5000);
+    const tier = Math.round(nextBossAt / 8000);
     boss = {
       tier,
       hp: 5 + tier * 2,
@@ -1436,7 +1436,7 @@ function update() {
       pattern: 0,
       wobble: 0,
     };
-    nextBossAt += 5000;
+    nextBossAt += 8000;
     // 보스 아레나: 일반 발판은 잠시 사라지고, 화면 전체를 덮는 일자 땅이 생긴다
     const floor = makePlatform(0, cameraY + 568, PlatType.NORMAL);
     floor.x = 0;
