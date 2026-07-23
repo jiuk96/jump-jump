@@ -36,7 +36,8 @@
         <button id="btn-help" class="btn-secondary">❓ 게임 방법</button>
       </div>
       <div class="btn-row">
-        <button id="btn-bgm" class="btn-secondary">🔊 음악 켜짐</button>
+        <button id="btn-settings" class="btn-secondary">⚙️ 설정</button>
+        <button id="btn-dex" class="btn-secondary">📖 도감</button>
       </div>
       <div class="control-select">
         <p class="control-title">조작 방법</p>
@@ -206,6 +207,27 @@
       <button id="btn-shop-back" class="btn-secondary">돌아가기</button>
     </div>
 
+    <!-- 설정 화면 -->
+    <div id="settings-screen" class="overlay hidden">
+      <h1 class="title small">⚙️ 설정</h1>
+      <div class="settings-list">
+        <div class="settings-row"><span>🔔 효과음</span><div class="seg"><button id="set-sfx-on" class="seg-btn">켬</button><button id="set-sfx-off" class="seg-btn">끔</button></div></div>
+        <div class="settings-row"><span>🎵 배경음악</span><div class="seg"><button id="set-music-on" class="seg-btn">켬</button><button id="set-music-off" class="seg-btn">끔</button></div></div>
+        <div class="settings-row"><span>📳 진동</span><div class="seg"><button id="set-vib-on" class="seg-btn">켬</button><button id="set-vib-off" class="seg-btn">끔</button></div></div>
+        <div class="settings-row"><span>📱 기울기 감도</span><div class="seg"><button id="set-tilt-low" class="seg-btn">낮음</button><button id="set-tilt-mid" class="seg-btn">보통</button><button id="set-tilt-high" class="seg-btn">높음</button></div></div>
+        <div class="settings-row"><span>🔫 발사 버튼</span><div class="seg"><button id="set-hand-r" class="seg-btn">오른쪽</button><button id="set-hand-l" class="seg-btn">왼쪽</button></div></div>
+      </div>
+      <button id="btn-settings-back" class="btn-secondary">돌아가기</button>
+    </div>
+
+    <!-- 도감 화면 -->
+    <div id="dex-screen" class="overlay hidden">
+      <h1 class="title small">📖 도감</h1>
+      <p id="dex-count" class="lb-my"></p>
+      <div id="dex-grid" class="dex-grid"></div>
+      <button id="btn-dex-back" class="btn-secondary">돌아가기</button>
+    </div>
+
     <!-- 가위바위보 부활 화면 -->
     <div id="rps-screen" class="overlay hidden">
       <h1 class="title small">✊✋✌️ 가위바위보!</h1>
@@ -220,10 +242,11 @@
 
     <!-- 게임오버 화면 -->
     <div id="gameover-screen" class="overlay hidden">
-      <h1 class="title small">게임 오버</h1>
+      <h1 id="gameover-title" class="title small">게임 오버</h1>
       <p class="score-line">점수 <span id="final-score">0</span></p>
       <p class="score-line coin">🪙 +<span id="final-coins">0</span></p>
       <p class="score-line best" id="final-best"></p>
+      <p id="final-stats" class="final-stats"></p>
       <p id="new-record" class="new-record hidden">🎉 신기록!</p>
       <p id="lb-status" class="lb-status"></p>
       <button id="btn-register" class="btn-secondary hidden">🏅 닉네임 만들고 랭킹 등록</button>
