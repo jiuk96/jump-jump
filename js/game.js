@@ -137,16 +137,26 @@ async function loadCharImages() {
 loadCharImages();
 
 // ---------- 영구 강화 (코인으로 레벨업) ----------
+// 가격: 처음엔 싸고 레벨마다 약 2.1배씩 비싸짐
 const UPGRADES = {
-  jump: { name: '점프력', icon: '🦵', desc: '점프 높이 +2%/레벨', max: 5, costs: [500, 1200, 2500, 4500, 7000] },
-  magnet: { name: '기본 자석', icon: '🧲', desc: '자석 없이도 코인을 끌어당김', max: 3, costs: [800, 2000, 4000] },
-  star: { name: '별 수집가', icon: '⭐', desc: '스타 파워 필요 별 -1/레벨', max: 2, costs: [1500, 3500] },
-  revive: { name: '질긴 생명', icon: '❤️', desc: '부활 무적 +1초/레벨', max: 3, costs: [600, 1500, 3000] },
-  rocket: { name: '출발 부스트', icon: '🚀', desc: '시작 시 제트팩 0.5초/레벨', max: 3, costs: [400, 1000, 2200] },
+  jump: { name: '점프력', icon: '🦵', desc: '점프 높이 +2%/레벨', max: 5, base: 200 },
+  rocket: { name: '출발 부스트', icon: '🚀', desc: '시작 시 제트팩 0.5초/레벨', max: 3, base: 120 },
+  coinup: { name: '코인 부스터', icon: '💰', desc: '코인 획득량 +5%/레벨', max: 4, base: 150 },
+  revive: { name: '질긴 생명', icon: '❤️', desc: '부활 무적 +1초/레벨', max: 3, base: 180 },
+  reload: { name: '빠른 장전', icon: '⏱️', desc: '재장전 시간 -0.25초/레벨', max: 3, base: 200 },
+  fireslow: { name: '내열 코팅', icon: '🧯', desc: '불길 상승 속도 -8%/레벨', max: 3, base: 220 },
+  ammo: { name: '탄창 확장', icon: '🔫', desc: '총알 +2발/레벨', max: 3, base: 250 },
+  magnet: { name: '기본 자석', icon: '🧲', desc: '자석 없이도 코인을 끌어당김', max: 3, base: 260 },
+  star: { name: '별 수집가', icon: '⭐', desc: '스타 파워 필요 별 -1/레벨', max: 2, base: 500 },
 };
-let upg = { jump: 0, magnet: 0, star: 0, revive: 0, rocket: 0 };
+let upg = { jump: 0, magnet: 0, star: 0, revive: 0, rocket: 0, coinup: 0, reload: 0, fireslow: 0, ammo: 0 };
 try { upg = Object.assign(upg, JSON.parse(localStorage.getItem('jump-upg') || '{}')); } catch (e) {}
 function saveUpg() { localStorage.setItem('jump-upg', JSON.stringify(upg)); }
+function upgCost(k) {
+  return Math.round(UPGRADES[k].base * Math.pow(2.1, upg[k]) / 10) * 10;
+}
+function ammoMax() { return AMMO_MAX + upg.ammo * 2; }
+function reloadTime() { return RELOAD_TIME - upg.reload * 15; }
 
 // 강화·캐릭터 효과 적용 헬퍼
 function jumpV() {
@@ -727,6 +737,9 @@ let cleared = false;   // 이번 판 클리어 여부
 let dying = 0;         // 죽음 슬로모션 프레임
 let deathSpin = 0;
 let runMaxCombo, runKills, runBosses, runStars; // 이번 판 통계
+let fireY;             // 아래에서 올라오는 불길 (월드 y)
+let fireOn;            // 불길 활성화 여부
+let fireAnnounced;
 
 const MILESTONES = [
   [3500, '☁️ 구름을 지나 하늘 높이!'],
@@ -931,7 +944,7 @@ function newGame() {
   bossShots = [];
   nextBossAt = 6000;
   standPlat = null;
-  ammo = AMMO_MAX;
+  ammo = ammoMax();
   reloading = 0;
   jetpackSlow = false;
   rpsUsed = false;
@@ -947,6 +960,9 @@ function newGame() {
   runStars = 0;
   msgQueue = [];
   curMsg = null;
+  fireY = H + 420;
+  fireOn = false;
+  fireAnnounced = false;
 
   // 들고 들어가는 아이템: 생명은 보유분 그대로, 로켓/자석은 있으면 1개 자동 사용
   lives = inv.life;
@@ -1127,7 +1143,7 @@ function shoot() {
 
 function startReload() {
   if (reloading > 0) return;
-  reloading = RELOAD_TIME;
+  reloading = reloadTime();
   beep(300, 0.08, 'triangle', 0.12);
   setTimeout(() => beep(420, 0.08, 'triangle', 0.12), 160);
   updateFireBtn();
@@ -1228,6 +1244,7 @@ function tryRevive() {
     jetpackTimer = 0;
     combo = 0;
     shakeT = 14;
+    fireY = cameraY + H + 360;
     sfx.revive();
     vib(120);
     addFloat('🐱 고양이 목숨! 한 번 더!', player.x, cameraY + H - 60, '#e67e22', 16);
@@ -1247,6 +1264,7 @@ function tryRevive() {
     jetpackTimer = 0;
     combo = 0;
     shakeT = 14;
+    fireY = cameraY + H + 360;
     sfx.revive();
     vib(120);
     addBurst(player.x, player.y, '#e74c3c');
@@ -1317,6 +1335,7 @@ function playRps(mine) {
         jetpackTimer = 0;
         combo = 0;
         standPlat = null;
+        fireY = cameraY + H + 360;
         sfx.revive();
         addBurst(player.x, cameraY + H - 30, '#f6e58d');
         announce('✊✋✌️ 가위바위보 승리! 한 목숨 더! 🎉', '#e67e22');
@@ -1620,8 +1639,9 @@ function update() {
         runCoins++;
         wallet++;
         stats.coins++;
-        if (curChar === 'penguin') { // 코인 +10%
-          coinFrac += 0.1;
+        const bonusRate = (curChar === 'penguin' ? 0.1 : 0) + upg.coinup * 0.05; // 펭귄+코인 부스터
+        if (bonusRate > 0) {
+          coinFrac += bonusRate;
           if (coinFrac >= 1) { coinFrac -= 1; runCoins++; wallet++; stats.coins++; }
         }
         saveWallet();
@@ -1983,11 +2003,33 @@ function update() {
   if (reloading > 0) {
     reloading--;
     if (reloading === 0) {
-      ammo = AMMO_MAX;
+      ammo = ammoMax();
       beep(650, 0.09, 'square', 0.12); // 철컥!
       updateFireBtn();
     } else if (frame % 6 === 0) {
       updateFireBtn();
+    }
+  }
+
+  // --- 불길: 같은 곳에 머물 수 없다! ---
+  if (!fireOn && (score > 250 || frame > 540)) {
+    fireOn = true;
+    if (!fireAnnounced) {
+      fireAnnounced = true;
+      announce('🔥 아래에서 불길이 올라옵니다! 계속 위로!', '#e74c3c', 170);
+      vib(80);
+    }
+  }
+  if (fireOn && !boss && state === State.PLAYING) {
+    const fireSpd = (0.45 + difficulty() * 0.75) * (1 - 0.08 * upg.fireslow);
+    fireY -= fireSpd;
+    // 너무 뒤처지면 화면 아래 3분의 1 지점까지 따라붙음
+    fireY = Math.min(fireY, cameraY + H + 320);
+    if (invincible <= 0 && dying <= 0 && player.y + 18 > fireY) {
+      addBurst(player.x, player.y, '#e67e22');
+      addBurst(player.x, player.y, '#e74c3c');
+      shakeT = Math.max(shakeT, 12);
+      if (!tryRevive()) return;
     }
   }
 
@@ -3385,6 +3427,7 @@ function draw() {
     ctx.restore();
   }
 
+  drawFire();
   if (state === State.PLAYING || state === State.PAUSED || state === State.COUNTDOWN) drawAnnounce();
 
   // 조작 반전 상태: 보라 틴트
@@ -3574,6 +3617,47 @@ function draw() {
   ctx.restore();
 }
 
+// ---------- 불길 그리기 ----------
+function drawFire() {
+  if (!fireOn || boss || state === State.ENDING) return;
+  const fy = fireY - cameraY;
+  // 가까워지면 화면 아래 붉은 경고 글로우
+  const gap = fireY - player.y;
+  if (gap < 300) {
+    const a = clamp(1 - gap / 300, 0, 1) * 0.35;
+    const g = ctx.createLinearGradient(0, H - 130, 0, H);
+    g.addColorStop(0, 'rgba(231, 76, 60, 0)');
+    g.addColorStop(1, `rgba(231, 76, 60, ${a})`);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, H - 130, W, 130);
+  }
+  if (fy > H + 40) return;
+  // 본체: 그라데이션 + 일렁이는 불꽃 혀
+  const g2 = ctx.createLinearGradient(0, fy - 26, 0, Math.min(fy + 130, H + 40));
+  g2.addColorStop(0, 'rgba(255, 200, 80, 0.95)');
+  g2.addColorStop(0.35, 'rgba(240, 120, 40, 0.97)');
+  g2.addColorStop(1, 'rgba(180, 40, 20, 1)');
+  ctx.fillStyle = g2;
+  ctx.beginPath();
+  ctx.moveTo(0, H + 40);
+  ctx.lineTo(0, fy);
+  for (let x = 0; x <= W; x += 18) {
+    const h2 = 14 + 11 * Math.sin(x * 0.35 + frame * 0.22) + 6 * Math.sin(x * 0.13 - frame * 0.15);
+    ctx.lineTo(x + 9, fy - h2);
+    ctx.lineTo(x + 18, fy);
+  }
+  ctx.lineTo(W, H + 40);
+  ctx.closePath();
+  ctx.fill();
+  // 불씨
+  for (let i = 0; i < 8; i++) {
+    const ex = (i * 47 + frame * 1.3 * ((i % 3) + 1)) % W;
+    const eh = (i * 31 + frame * (1.6 + (i % 2))) % 90;
+    ctx.fillStyle = `rgba(255, ${150 + (i * 13) % 90}, 60, ${0.75 - eh / 130})`;
+    ctx.fillRect(ex, fy - 20 - eh, 3, 3);
+  }
+}
+
 // ---------- 루프 ----------
 // 고정 타임스텝: 화면 주사율(60/90/120Hz)과 무관하게 물리는 항상 초당 60회.
 // 120Hz 폰에서 게임이 2배 빨라지던 문제를 해결한다.
@@ -3639,7 +3723,7 @@ const pauseBtn = $('btn-pause');
 const fireBtn = $('btn-fire');
 function updateFireBtn() {
   if (reloading > 0) {
-    fireBtn.innerHTML = `⏳<span class="ammo">${Math.ceil((reloading / RELOAD_TIME) * 100)}%</span>`;
+    fireBtn.innerHTML = `⏳<span class="ammo">${Math.ceil((reloading / reloadTime()) * 100)}%</span>`;
     fireBtn.classList.add('reloading');
   } else {
     fireBtn.innerHTML = `🔫<span class="ammo">${ammo}</span>`;
@@ -3741,7 +3825,7 @@ function renderUpgrades() {
   for (const [key, def] of Object.entries(UPGRADES)) {
     const lv = upg[key];
     const maxed = lv >= def.max;
-    const cost = maxed ? 0 : def.costs[lv];
+    const cost = maxed ? 0 : upgCost(key);
     const el = document.createElement('div');
     el.className = 'shop-item';
     el.innerHTML = `
