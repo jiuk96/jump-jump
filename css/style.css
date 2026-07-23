@@ -646,6 +646,9 @@ html, body {
   flex-direction: column;
   gap: 14px;
   width: min(92%, 380px);
+  max-height: 64dvh;
+  overflow-y: auto;
+  padding: 2px;
 }
 
 .settings-row {
@@ -1244,4 +1247,82 @@ html, body {
 .lefty .move-btns {
   left: auto;
   right: 14px;
+}
+
+/* ---------- 🔑 치트 코드 & 운영자 패널 ---------- */
+.cheat-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.cheat-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  border: 2px solid rgba(120, 110, 160, 0.35);
+  border-radius: 12px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.85);
+  color: #2c3e50;
+}
+.cheat-row button {
+  padding: 9px 16px;
+  border: none;
+  border-radius: 12px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  background: #6c5ce7;
+  color: #fff;
+  cursor: pointer;
+}
+.master-panel {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(44, 40, 70, 0.85);
+}
+.master-panel.hidden {
+  display: none;
+}
+.master-title {
+  font-size: 13px;
+  font-weight: 900;
+  color: #ffd832;
+  margin-bottom: 8px;
+}
+.master-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.mp-btn {
+  padding: 9px 6px;
+  border: none;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  cursor: pointer;
+}
+.mp-btn:active {
+  background: rgba(255, 255, 255, 0.3);
+}
+.mp-btn.on {
+  background: #27ae60;
+}
+.mp-btn.danger {
+  background: rgba(231, 76, 60, 0.55);
+}
+.master-status {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #7bed9f;
+  min-height: 15px;
+  text-align: center;
 }
