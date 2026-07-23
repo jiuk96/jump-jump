@@ -601,7 +601,7 @@ function updateWeather() {
 }
 
 // ---------- 게임 상태 ----------
-const State = { MENU: 0, PLAYING: 1, PAUSED: 2, OVER: 3, COUNTDOWN: 4 };
+const State = { MENU: 0, PLAYING: 1, PAUSED: 2, OVER: 3, COUNTDOWN: 4, RPS: 5 };
 let state = State.MENU;
 let countdownUntil = 0; // 카운트다운 종료 시각 (performance.now 기준)
 
@@ -655,6 +655,7 @@ let standPlat;         // 보스전: 서 있는 발판 (점프 정지)
 let ammo;              // 남은 총알 (탄창 10발)
 let reloading;         // 재장전 남은 프레임
 let jetpackSlow;       // 시작 로켓은 천천히 상승
+let rpsUsed;           // 가위바위보 부활 기회 (판당 1회)
 const AMMO_MAX = 10;
 const RELOAD_TIME = 95; // 약 1.6초
 let bossShots;         // 보스 투사체
@@ -812,6 +813,7 @@ function newGame() {
   ammo = AMMO_MAX;
   reloading = 0;
   jetpackSlow = false;
+  rpsUsed = false;
 
   // 들고 들어가는 아이템: 생명은 보유분 그대로, 로켓/자석은 있으면 1개 자동 사용
   lives = inv.life;
@@ -1071,8 +1073,79 @@ function tryRevive() {
     checkAchievements();
     return true;
   }
+  // 마지막 기회: 가위바위보! (판당 1회)
+  if (!rpsUsed) {
+    openRps();
+    return false;
+  }
   gameOver();
   return false;
+}
+
+// ---------- 가위바위보 부활 ----------
+const RPS_HANDS = ['✊', '✋', '✌️'];
+let rpsBusy = false;
+
+function openRps() {
+  rpsUsed = true;
+  rpsBusy = false;
+  state = State.RPS;
+  $('rps-result').textContent = '무엇을 낼까요?';
+  document.querySelectorAll('.rps-btn').forEach((b) => { b.disabled = false; });
+  $('rps-screen').classList.remove('hidden');
+  pauseBtn.classList.add('hidden');
+  fireBtn.classList.add('hidden');
+  beep(440, 0.15, 'square', 0.12);
+  vib(60);
+}
+
+function playRps(mine) {
+  if (rpsBusy || state !== State.RPS) return;
+  rpsBusy = true;
+  document.querySelectorAll('.rps-btn').forEach((b) => { b.disabled = true; });
+  const comp = Math.floor(Math.random() * 3);
+  const resultEl = $('rps-result');
+  resultEl.textContent = `나 ${RPS_HANDS[mine]}  vs  👾 ${RPS_HANDS[comp]}`;
+  const win = (mine - comp + 3) % 3 === 1;
+  const draw = mine === comp;
+  setTimeout(() => {
+    if (draw) {
+      resultEl.textContent = `나 ${RPS_HANDS[mine]} vs 👾 ${RPS_HANDS[comp]} — 비겼다! 한 번 더!`;
+      document.querySelectorAll('.rps-btn').forEach((b) => { b.disabled = false; });
+      rpsBusy = false;
+      beep(500, 0.1, 'square', 0.1);
+      return;
+    }
+    if (win) {
+      resultEl.textContent = `나 ${RPS_HANDS[mine]} vs 👾 ${RPS_HANDS[comp]} — 이겼다! 🎉`;
+      sfx.bonus();
+      vib([80, 60, 120]);
+      setTimeout(() => {
+        $('rps-screen').classList.add('hidden');
+        pauseBtn.classList.remove('hidden');
+        fireBtn.classList.remove('hidden');
+        state = State.PLAYING;
+        player.x = clamp(player.x, 30, W - 30);
+        player.y = cameraY + H - 4;
+        player.vy = SPRING_VY * 1.2;
+        player.vx = 0;
+        invincible = REVIVE_INVINCIBLE + upg.revive * 60;
+        jetpackTimer = 0;
+        combo = 0;
+        standPlat = null;
+        sfx.revive();
+        addBurst(player.x, cameraY + H - 30, '#f6e58d');
+        addFloat('가위바위보 승리! 한 목숨 더! 🎉', W / 2, 200, '#e67e22', 17, true);
+      }, 900);
+    } else {
+      resultEl.textContent = `나 ${RPS_HANDS[mine]} vs 👾 ${RPS_HANDS[comp]} — 졌다... 😢`;
+      sfx.die();
+      setTimeout(() => {
+        $('rps-screen').classList.add('hidden');
+        gameOver();
+      }, 1000);
+    }
+  }, 550);
 }
 
 // ---------- 업데이트 ----------
@@ -3422,7 +3495,7 @@ function resumeGame() {
 }
 
 function gameOver() {
-  if (state !== State.PLAYING) return;
+  if (state !== State.PLAYING && state !== State.RPS) return;
   state = State.OVER;
   sfx.die();
   vib(160);
@@ -3500,6 +3573,9 @@ $('btn-shop-back').addEventListener('click', () => {
 });
 document.querySelectorAll('.btn-buy').forEach((btn) => {
   btn.addEventListener('click', () => buyItem(btn.dataset.item));
+});
+document.querySelectorAll('.rps-btn').forEach((btn) => {
+  btn.addEventListener('click', () => playRps(Number(btn.dataset.hand)));
 });
 $('btn-ach').addEventListener('click', () => {
   startScreen.classList.add('hidden');

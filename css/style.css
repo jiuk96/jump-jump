@@ -609,3 +609,30 @@ html, body {
   border: none;
   cursor: pointer;
 }
+
+/* ---------- 가위바위보 ---------- */
+.rps-result {
+  font-size: clamp(17px, 4.8vw, 22px);
+  font-weight: 800;
+  color: #2c3e50;
+  min-height: 2.4em;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.rps-btns { display: flex; gap: 16px; }
+
+.rps-btn {
+  width: 76px;
+  height: 76px;
+  border: none;
+  border-radius: 50%;
+  background: #fff;
+  font-size: 36px;
+  cursor: pointer;
+  box-shadow: 0 5px 0 #bdc3c7;
+  transition: transform 0.1s;
+}
+
+.rps-btn:active { transform: translateY(4px); box-shadow: 0 1px 0 #bdc3c7; }
+.rps-btn:disabled { opacity: 0.5; }
