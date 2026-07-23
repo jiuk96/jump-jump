@@ -393,7 +393,7 @@ const CLOUD_KEYS = [
   'jump-equip', 'jump-upg', 'jump-chars', 'jump-char', 'jump-name',
   'jump-dex', 'jump-dexn', 'jump-settings', 'jump-title', 'jump-control',
 ];
-let cloud = { uid: null, at: null, atExp: 0, rt: null, lastHash: '', lastSyncAt: 0, status: 'init' };
+let cloud = { uid: null, at: null, atExp: 0, rt: null, lastHash: '', lastSyncAt: 0, status: 'init', lastErr: '' };
 try {
   const a = JSON.parse(localStorage.getItem('jump-auth') || 'null');
   if (a && a.rt && a.uid) { cloud.rt = a.rt; cloud.uid = a.uid; }
@@ -426,9 +426,19 @@ async function ensureCloudSession() {
       headers: { apikey: SUPA_KEY, 'Content-Type': 'application/json' },
       body: '{}',
     });
-    if (!res2.ok) { cloud.status = 'off'; return false; } // 대시보드에서 익명 로그인 미설정
+    if (!res2.ok) { // 실패 사유를 화면에서 볼 수 있게 저장
+      let why = `HTTP ${res2.status}`;
+      try {
+        const e2 = await res2.json();
+        why = e2.error_code || e2.msg || e2.message || e2.error_description || why;
+      } catch (e) {}
+      cloud.lastErr = why;
+      cloud.status = 'off';
+      return false;
+    }
     const j2 = await res2.json();
-    if (!j2.access_token || !j2.user) { cloud.status = 'off'; return false; }
+    if (!j2.access_token || !j2.user) { cloud.lastErr = 'no-token'; cloud.status = 'off'; return false; }
+    cloud.lastErr = '';
     cloud.at = j2.access_token;
     cloud.rt = j2.refresh_token;
     cloud.uid = j2.user.id;
@@ -476,8 +486,13 @@ async function cloudSync(force = false) {
       cloud.lastHash = hash;
       cloud.lastSyncAt = Date.now();
       cloud.status = 'ok';
+      cloud.lastErr = '';
       return true;
     }
+    try {
+      const e3 = await res.json();
+      cloud.lastErr = e3.code || e3.message || `HTTP ${res.status}`;
+    } catch (e) { cloud.lastErr = `HTTP ${res.status}`; }
     cloud.status = 'err';
     return false;
   } catch (e) {
@@ -4877,7 +4892,8 @@ function renderMe() {
       ${worn.length ? worn.map((w) => `<div class="me-row"><span>${w}</span><b>착용 ✓</b></div>`).join('') : '<div class="me-row"><span>없음 — 상점에서 꾸며보세요!</span></div>'}
     </div>`;
   } else {
-    const cloudLabel = { ok: '✅ 연동됨', off: '⚠️ 서버 설정 대기', err: '⚠️ 연결 오류', init: '⏳ 연결 중...' }[cloud.status] || '-';
+    let cloudLabel = { ok: '✅ 연동됨', off: '⚠️ 서버 설정 대기', err: '⚠️ 연결 오류', init: '⏳ 연결 중...' }[cloud.status] || '-';
+    if (cloud.lastErr && cloud.status !== 'ok') cloudLabel += ` (${String(cloud.lastErr).slice(0, 40)})`;
     const lastSync = cloud.lastSyncAt ? new Date(cloud.lastSyncAt).toLocaleTimeString('ko-KR') : '아직 없음';
     $('me-info').innerHTML = `<div class="me-section"><h3>☁️ 계정 백업</h3>
       <div class="me-row"><span>상태</span><b>${cloudLabel}</b></div>
@@ -5995,7 +6011,7 @@ $('mp-reset').addEventListener('click', () => {
 });
 
 // ---------- 버전 표시 & 최신 버전 유도 ----------
-const GAME_VERSION = 56; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
+const GAME_VERSION = 57; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
 const verLabel = $('version-label');
 function setVerLabel(txt, cls) {
   if (!verLabel) return;
