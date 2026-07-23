@@ -1877,6 +1877,8 @@ function playRps(mine) {
 function update() {
   frame++;
   if (cheatGod && invincible < 30) invincible = 30; // 🛠️ 운영자 무적
+  // 🚀 부스터(시작 로켓·미션 제트팩·스타 파워·복귀 비행) 중엔 무적 — 보호막도 소모되지 않음
+  if (jetpackTimer > 0 && invincible < 2) invincible = 2;
 
   // 죽음 슬로모션: 잠시 느리게 떨어지며 빙글 돈 뒤 가위바위보/게임오버
   if (dying > 0) {
@@ -2248,6 +2250,7 @@ function update() {
   for (const dc of dizzyClouds) {
     if (boss) break;
     if (dc.used) continue;
+    if (jetpackTimer > 0 || invincible > 0) continue; // 비행·무적 중엔 어지럼도 통과
     if (Math.abs(player.x - dc.x) < dc.w / 2 + 10 && Math.abs(player.y - dc.y) < dc.h / 2 + 14) {
       dc.used = true;
       dexAdd('dizzy');
@@ -7366,7 +7369,7 @@ $('mp-reset').addEventListener('click', () => {
 });
 
 // ---------- 버전 표시 & 최신 버전 유도 ----------
-const GAME_VERSION = 66; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
+const GAME_VERSION = 67; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
 const verLabel = $('version-label');
 function setVerLabel(txt, cls) {
   if (!verLabel) return;
