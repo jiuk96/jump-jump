@@ -1,6 +1,6 @@
 // 서비스 워커: 오프라인 플레이 지원
 // 게임 파일을 수정하면 CACHE_VERSION을 올려야 사용자에게 새 버전이 전달됩니다.
-const CACHE_VERSION = 'jump-v41';
+const CACHE_VERSION = 'jump-v42';
 const ASSETS = [
   '.',
   'index.html',
@@ -18,6 +18,16 @@ const ASSETS = [
   'assets/character/penguin/fly-left.png',
   'assets/character/fly-left.png',
   'assets/character/shoot.png',
+  'assets/character/fox/jump-left.png',
+  'assets/character/fox/fly-left.png',
+  'assets/character/bear/jump-left.png',
+  'assets/character/bear/fly-left.png',
+  'assets/character/owl/jump-left.png',
+  'assets/character/owl/fly-left.png',
+  'assets/character/dragon/jump-left.png',
+  'assets/character/dragon/fly-left.png',
+  'assets/character/unicorn/jump-left.png',
+  'assets/character/unicorn/fly-left.png',
 ];
 
 self.addEventListener('install', (e) => {
