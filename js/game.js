@@ -1423,6 +1423,7 @@ function fireBossPattern(kind) {
 function endBossArena() {
   boss = null;
   bossShots = [];
+  bullets = []; // 남은 총알 제거 — 복귀 비행 때 카메라가 추월해 '되돌아오는' 것처럼 보임
   standPlat = null;
   for (const p of platforms) {
     if (p.arena) addBurst(p.x + p.w / 2, p.y, '#f6e58d');
@@ -2309,7 +2310,7 @@ function update() {
       }
     }
   }
-  bullets = bullets.filter((b) => b.y > cameraY - 50);
+  bullets = bullets.filter((b) => b.y > cameraY - 16); // 화면 위로 나가면 바로 정리 (빠른 상승 시 재등장 방지)
   if (shootPose > 0) shootPose--;
 
   // ⚡ 낙뢰: 충전이 가득하고 화면에 적이 있으면 자동 발사 (없으면 충전 유지)
@@ -5731,7 +5732,7 @@ refreshMenu();
 loop();
 
 // ---------- 버전 표시 & 최신 버전 유도 ----------
-const GAME_VERSION = 53; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
+const GAME_VERSION = 54; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
 const verLabel = $('version-label');
 function setVerLabel(txt, cls) {
   if (!verLabel) return;
