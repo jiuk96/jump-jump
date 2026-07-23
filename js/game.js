@@ -1587,6 +1587,7 @@ function openRps() {
   $('rps-screen').classList.remove('hidden');
   pauseBtn.classList.add('hidden');
   fireBtn.classList.add('hidden');
+  showMoveBtns(false);
   beep(440, 0.15, 'square', 0.12);
   vib(60);
 }
@@ -1616,6 +1617,7 @@ function playRps(mine) {
         $('rps-screen').classList.add('hidden');
         pauseBtn.classList.remove('hidden');
         fireBtn.classList.remove('hidden');
+        showMoveBtns(true);
         state = State.PLAYING;
         player.x = clamp(player.x, 30, W - 30);
         player.y = cameraY + H - 4;
@@ -4447,6 +4449,24 @@ const shopScreen = $('shop-screen');
 const helpScreen = $('help-screen');
 const pauseBtn = $('btn-pause');
 const fireBtn = $('btn-fire');
+const moveBtns = $('move-btns');
+// ◀ ▶ 이동 버튼: 누르는 동안 이동 (터치 모드 전용, 화면 반쪽 터치와 병행)
+function bindMoveBtn(id, key) {
+  const b = $(id);
+  const on = (e) => { e.preventDefault(); input[key] = true; };
+  const off = (e) => { e.preventDefault(); input[key] = false; };
+  b.addEventListener('touchstart', on, { passive: false });
+  b.addEventListener('touchend', off, { passive: false });
+  b.addEventListener('touchcancel', off, { passive: false });
+  b.addEventListener('mousedown', on);
+  b.addEventListener('mouseup', off);
+  b.addEventListener('mouseleave', () => { input[key] = false; });
+}
+bindMoveBtn('btn-left', 'left');
+bindMoveBtn('btn-right', 'right');
+function showMoveBtns(show) {
+  moveBtns.classList.toggle('hidden', !show || controlMode !== 'touch');
+}
 function updateFireBtn() {
   if (reloading > 0) {
     fireBtn.innerHTML = `⏳<span class="ammo">${Math.ceil((reloading / reloadTime()) * 100)}%</span>`;
@@ -4485,7 +4505,7 @@ function refreshControlUI() {
   $('ctrl-touch').classList.toggle('active', controlMode === 'touch');
   $('ctrl-tilt').classList.toggle('active', controlMode === 'tilt');
   $('control-desc').innerHTML = controlMode === 'touch'
-    ? '화면 좌/우 터치(또는 ← → 방향키)로 이동<br>🔫 오른쪽 아래 버튼(또는 스페이스바)으로 발사'
+    ? '◀ ▶ 버튼 또는 화면 좌/우 터치(← → 방향키)로 이동<br>🔫 오른쪽 아래 버튼(또는 스페이스바)으로 발사'
     : '핸드폰을 좌우로 기울여 이동<br>🔫 오른쪽 아래 버튼으로 발사';
 }
 
@@ -4870,6 +4890,7 @@ function beginCountdown() {
   $('char-screen').classList.add('hidden');
   pauseBtn.classList.remove('hidden');
   fireBtn.classList.remove('hidden');
+  showMoveBtns(true);
   updateFireBtn();
   photoMode = false;
   bgm.start();
@@ -4927,6 +4948,7 @@ function gameOver() {
   overScreen.classList.remove('hidden');
   pauseBtn.classList.add('hidden');
   fireBtn.classList.add('hidden');
+  showMoveBtns(false);
   autoSubmitScore();
 }
 
@@ -4948,6 +4970,7 @@ function goHome() {
   if (meTimer) { clearInterval(meTimer); meTimer = null; }
   pauseBtn.classList.add('hidden');
   fireBtn.classList.add('hidden');
+  showMoveBtns(false);
   startScreen.classList.remove('hidden');
   newGame(); // 메뉴 배경을 새 장면으로 (state가 MENU라 아이템 소비 없음)
   refreshMenu();
@@ -4978,6 +5001,7 @@ function startRunner() {
   $('char-screen').classList.add('hidden');
   pauseBtn.classList.remove('hidden');
   fireBtn.classList.add('hidden'); // 러너에선 총 없음
+  showMoveBtns(false); // 러너는 탭 조작
   photoMode = false;
   bgm.start();
 }
@@ -5063,6 +5087,7 @@ function runnerOver() {
   $('new-record').classList.toggle('hidden', !isRecord);
   overScreen.classList.remove('hidden');
   pauseBtn.classList.add('hidden');
+  showMoveBtns(false);
   autoSubmitScore(m, 'runner'); // 문 런 랭킹 등록 (100m 미만 제외)
 }
 
@@ -5706,7 +5731,7 @@ refreshMenu();
 loop();
 
 // ---------- 버전 표시 & 최신 버전 유도 ----------
-const GAME_VERSION = 51; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
+const GAME_VERSION = 52; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
 const verLabel = $('version-label');
 function setVerLabel(txt, cls) {
   if (!verLabel) return;
