@@ -389,7 +389,7 @@ function dexAdd(id) {
   dex.add(id);
   localStorage.setItem('jump-dex', JSON.stringify([...dex]));
   if (state === State.PLAYING) {
-    addFloat(`📖 도감 등록: ${DEX[id][0]} ${DEX[id][1]}`, W / 2, 250, '#16a085', 14, true, 140);
+    announce(`📖 도감 등록: ${DEX[id][0]} ${DEX[id][1]}`, '#16a085', 90);
   }
 }
 
@@ -746,6 +746,46 @@ function addFloat(text, x, y, color = '#e67e22', size = 16, screen = false, life
   floatTexts.push({ text, x, y, color, size, life, screen });
 }
 
+// 화면 중앙 안내는 큐로 관리 — 한 번에 하나씩, 겹치지 않게
+let msgQueue = [];
+let curMsg = null;
+function announce(text, color = '#2c3e50', dur = 130) {
+  if ((curMsg && curMsg.text === text) || msgQueue.some((m) => m.text === text)) return; // 중복 방지
+  if (msgQueue.length >= 4) return; // 너무 쌓이면 버림
+  msgQueue.push({ text, color, dur });
+}
+function tickAnnounce() {
+  if (!curMsg && msgQueue.length && missionFlash <= 0) {
+    curMsg = msgQueue.shift();
+    curMsg.t = 0;
+  }
+  if (curMsg) {
+    curMsg.t++;
+    if (curMsg.t > curMsg.dur) curMsg = null;
+  }
+}
+function drawAnnounce() {
+  if (!curMsg) return;
+  const { text, color, t, dur } = curMsg;
+  const fadeIn = clamp(t / 12, 0, 1);
+  const fadeOut = clamp((dur - t) / 18, 0, 1);
+  const a = Math.min(fadeIn, fadeOut);
+  const slide = (1 - fadeIn) * -12;
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.font = '800 15px sans-serif';
+  const tw = ctx.measureText(text).width;
+  const pw = Math.min(tw + 36, W - 16);
+  const py = 152 + slide;
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  roundRect(W / 2 - pw / 2, py, pw, 34, 17);
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, W / 2, py + 17.5);
+  ctx.restore();
+}
+
 // ---------- 입력 ----------
 const input = { left: false, right: false, tilt: 0 };
 
@@ -894,6 +934,8 @@ function newGame() {
   runKills = 0;
   runBosses = 0;
   runStars = 0;
+  msgQueue = [];
+  curMsg = null;
 
   // 들고 들어가는 아이템: 생명은 보유분 그대로, 로켓/자석은 있으면 1개 자동 사용
   lives = inv.life;
@@ -988,7 +1030,7 @@ function spawnPlatformRow() {
   if (score > 1500 && wr() < 0.02 + d * 0.07) {
     if (!localStorage.getItem('jump-shoot-hint')) {
       localStorage.setItem('jump-shoot-hint', '1');
-      addFloat('👾 몬스터 등장! 화면 위쪽 탭(또는 스페이스바)으로 총 발사!', W / 2, 210, '#c0392b', 14, true);
+      announce('👾 몬스터 등장! 🔫 버튼으로 총 발사!', '#c0392b', 180);
     }
     const isUfo = score > 7000 && wr() < 0.35;
     monsters.push({
@@ -1267,7 +1309,7 @@ function playRps(mine) {
         standPlat = null;
         sfx.revive();
         addBurst(player.x, cameraY + H - 30, '#f6e58d');
-        addFloat('가위바위보 승리! 한 목숨 더! 🎉', W / 2, 200, '#e67e22', 17, true);
+        announce('✊✋✌️ 가위바위보 승리! 한 목숨 더! 🎉', '#e67e22');
       }, 900);
     } else {
       resultEl.textContent = `나 ${RPS_HANDS[mine]} vs 👾 ${RPS_HANDS[comp]} — 졌다... 😢`;
@@ -1298,7 +1340,7 @@ function update() {
 
   // 구간 이정표
   if (milestoneIdx < MILESTONES.length && score >= MILESTONES[milestoneIdx][0]) {
-    addFloat(MILESTONES[milestoneIdx][1], W / 2, 190, '#2c3e50', 18, true, 190);
+    announce(MILESTONES[milestoneIdx][1], '#2c3e50', 150);
     beep(760, 0.12, 'square', 0.12);
     setTimeout(() => beep(980, 0.16, 'square', 0.12), 130);
     milestoneIdx++;
@@ -1479,7 +1521,7 @@ function update() {
             wallet += 50;
             stats.coins += 50;
             saveWallet();
-            addFloat('🏵️ 간발의 승부사! +50🪙', W / 2, 230, '#e056fd', 18, true);
+            announce('🏵️ 간발의 승부사! +50🪙', '#e056fd');
             sfx.bonus();
           }
         } else {
@@ -1489,7 +1531,7 @@ function update() {
         // 튜토리얼: 첫 스프링
         if (tut && usedSpring && !tut.spring) {
           tut.spring = true;
-          addFloat('스프링! 아주 높이 점프! 🔴', W / 2, 190, '#e74c3c', 16, true);
+          announce('🔴 스프링! 아주 높이 점프!', '#e74c3c');
         }
         break;
       }
@@ -1550,7 +1592,7 @@ function update() {
         addBurst(c.x, c.y, '#ffd832');
         if (tut && !tut.star) {
           tut.star = true;
-          addFloat('별 10개를 모으면 스타 파워! ⭐', W / 2, 190, '#c78a00', 16, true);
+          announce('⭐ 별을 모으면 스타 파워!', '#c78a00');
         }
         if (starCount >= starGoalNow()) starPower();
       } else if (c.type === 'rainbow') {
@@ -1578,7 +1620,7 @@ function update() {
         dexAdd('coin');
         if (tut && !tut.coin) {
           tut.coin = true;
-          addFloat('코인으로 상점에서 아이템을 사요! 🪙', W / 2, 190, '#b7791f', 16, true);
+          announce('🪙 코인으로 상점에서 아이템을 사요!', '#b7791f');
         }
         if (stats.coins % 25 === 0) { saveStats(); checkAchievements(); }
       }
@@ -1719,7 +1761,7 @@ function update() {
       pattern: 0,
       wobble: 0,
     };
-    addFloat(`👹 ${BOSS_FACES[face].name} 등장!`, W / 2, 230, '#c0392b', 19, true, 160);
+    announce(`👹 ${BOSS_FACES[face].name} 등장!`, '#c0392b', 120);
     nextBossAt += 6000;
     dexAdd('bossmon');
     // 보스 아레나: 일반 발판은 잠시 사라지고, 화면 전체를 덮는 일자 땅이 생긴다
@@ -1744,7 +1786,7 @@ function update() {
       if (player.vy < 0) player.vy = 1.5;
       addFloat('비행 종료! 전투 준비!', player.x, player.y - 44, '#e67e22', 15);
     }
-    addFloat('👹 보스전! 좌우로 피하고 🔫 버튼으로 공격!', W / 2, 190, '#c0392b', 16, true);
+    announce('좌우로 피하고 🔫 버튼으로 공격!', '#c0392b', 140);
     beep(70, 0.6, 'sawtooth', 0.22);
     setTimeout(() => beep(55, 0.5, 'sawtooth', 0.2), 350);
     vib([220, 80, 220, 80, 450]); // 드르륵 드르륵 드르르륵!
@@ -1765,7 +1807,7 @@ function update() {
     }
     if (boss.t <= 0) {
       endBossArena();
-      addFloat('보스가 물러갔다...', W / 2, 190, '#57606f', 15, true);
+      announce('보스가 물러갔다...', '#57606f', 100);
     }
     // 아레나 천장: 보스 위로는 못 올라감
     if (player.y < cameraY + 55) {
@@ -1807,7 +1849,7 @@ function update() {
   // --- 튜토리얼: 첫 미션 안내 ---
   if (tut && mission && !tut.mission) {
     tut.mission = true;
-    addFloat('미션을 완수하면 보너스 타임! 🎯', W / 2, 190, '#6c3fb5', 16, true);
+    announce('🎯 미션을 완수하면 보너스 타임!', '#6c3fb5');
   }
 
   // --- 몬스터 ---
@@ -1935,6 +1977,8 @@ function update() {
       updateFireBtn();
     }
   }
+
+  tickAnnounce();
 
   // --- 미션 진행 ---
   if (missionFlash > 0) missionFlash--;
@@ -2654,9 +2698,9 @@ function drawWindOverlay() {
       ctx.strokeStyle = 'rgba(255,255,255,0.9)';
       ctx.lineWidth = 5;
       const msg = dir > 0 ? '💨 강풍 주의! →' : '← 강풍 주의! 💨';
-      ctx.strokeText(msg, W / 2, 170);
+      ctx.strokeText(msg, W / 2, 330);
       ctx.fillStyle = '#0984e3';
-      ctx.fillText(msg, W / 2, 170);
+      ctx.fillText(msg, W / 2, 330);
     }
     return;
   }
@@ -3328,6 +3372,8 @@ function draw() {
     ctx.restore();
   }
 
+  if (state === State.PLAYING || state === State.PAUSED || state === State.COUNTDOWN) drawAnnounce();
+
   // 조작 반전 상태: 보라 틴트
   if (reversedT > 0 && state === State.PLAYING) {
     ctx.fillStyle = `rgba(155, 89, 182, ${0.10 + 0.05 * Math.sin(frame * 0.3)})`;
@@ -3550,6 +3596,7 @@ function loop(now) {
     if (menuHop > 0) menuHop--;
     for (const f of floatTexts) f.life--;
     floatTexts = floatTexts.filter((f) => f.life > 0);
+    if (state === State.PAUSED || state === State.COUNTDOWN) tickAnnounce();
     // 달 착륙 엔딩 진행
     if (state === State.ENDING) {
       endingT++;
@@ -3872,7 +3919,7 @@ function beginCountdown() {
   updateFireBtn();
   photoMode = false;
   bgm.start();
-  if (tut) addFloat('좌우로 움직여 발판을 밟아요!', W / 2, 190, '#2c3e50', 16, true, 380);
+  if (tut) announce('👆 좌우로 움직여 발판을 밟아요!', '#2c3e50', 260);
 }
 
 function showHelp() {
