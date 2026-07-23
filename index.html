@@ -17,41 +17,29 @@
   <div id="game-container">
     <canvas id="game"></canvas>
 
-    <!-- 시작 화면 -->
-    <div id="start-screen" class="overlay">
-      <h1 class="title">점프!<br>점프!</h1>
-      <p class="subtitle">하늘 끝까지 올라가 보세요</p>
+    <!-- 시작 화면 (로비) -->
+    <div id="start-screen" class="overlay lobby">
+      <div class="top-bar">
+        <div class="chip">🏆 <span id="best-score-label">0</span></div>
+        <div class="chip">🪙 <span id="wallet-label">0</span></div>
+      </div>
+      <h1 class="title lobby-title">점프!점프!</h1>
+      <p id="title-sub" class="subtitle-lobby">하늘 끝까지 올라가 보세요</p>
       <button id="btn-start" class="btn-primary">게임 시작</button>
-      <button id="btn-daily" class="btn-daily">🗓️ 오늘의 챌린지</button>
-      <div class="btn-row">
-        <button id="btn-shop" class="btn-secondary">🛒 상점</button>
-        <button id="btn-upg" class="btn-secondary">💪 강화</button>
+      <div class="plate-grid">
+        <button id="btn-shop" class="plate"><span>🛒 상점</span><small>[아이템 구매]</small></button>
+        <button id="btn-upg" class="plate"><span>💪 강화</span><small>[영구 성장]</small></button>
+        <button id="btn-char" class="plate"><span>🐶 캐릭터</span><small>[동물 친구]</small></button>
+        <button id="btn-ach" class="plate"><span>🏆 도전과제</span><small>[업적 달성]</small></button>
+        <button id="btn-lb" class="plate"><span>🏅 랭킹</span><small>[전체 순위]</small></button>
+        <button id="btn-daily" class="plate plate-daily"><span>🗓️ 오늘의 챌린지</span><small>[매일 같은 맵]</small></button>
       </div>
-      <div class="btn-row">
-        <button id="btn-char" class="btn-secondary">🐶 캐릭터</button>
-        <button id="btn-ach" class="btn-secondary">🏆 도전과제</button>
+      <div class="dock">
+        <button id="btn-me" class="dock-btn"><span class="dock-icon">👤</span><span class="dock-label">내 정보</span></button>
+        <button id="btn-dex" class="dock-btn"><span class="dock-icon">📖</span><span class="dock-label">도감</span></button>
+        <button id="btn-help" class="dock-btn"><span class="dock-icon">❓</span><span class="dock-label">게임 방법</span></button>
+        <button id="btn-settings" class="dock-btn"><span class="dock-icon">⚙️</span><span class="dock-label">설정</span></button>
       </div>
-      <div class="btn-row">
-        <button id="btn-lb" class="btn-secondary">🏅 랭킹</button>
-        <button id="btn-help" class="btn-secondary">❓ 게임 방법</button>
-      </div>
-      <div class="btn-row">
-        <button id="btn-me" class="btn-secondary">👤 내 정보</button>
-        <button id="btn-dex" class="btn-secondary">📖 도감</button>
-      </div>
-      <div class="btn-row">
-        <button id="btn-settings" class="btn-secondary">⚙️ 설정</button>
-      </div>
-      <div class="control-select">
-        <p class="control-title">조작 방법</p>
-        <div class="seg">
-          <button id="ctrl-touch" class="seg-btn">👆 터치·방향키</button>
-          <button id="ctrl-tilt" class="seg-btn">📱 기울이기</button>
-        </div>
-        <p id="control-desc" class="control-desc"></p>
-      </div>
-      <p id="best-score-label" class="best"></p>
-      <p id="wallet-label" class="wallet">🪙 0</p>
     </div>
 
     <!-- 게임 방법 화면 -->
@@ -210,11 +198,21 @@
       <button id="btn-shop-back" class="btn-secondary">돌아가기</button>
     </div>
 
-    <!-- 내 정보 화면 -->
+    <!-- 내 정보 화면 (속성창) -->
     <div id="me-screen" class="overlay hidden">
       <h1 class="title small">👤 내 정보</h1>
-      <canvas id="me-preview" width="180" height="180" class="me-preview"></canvas>
-      <p id="me-name" class="me-name"></p>
+      <div class="me-top">
+        <canvas id="me-preview" width="180" height="180" class="me-preview"></canvas>
+        <div class="me-side">
+          <p id="me-name" class="me-name"></p>
+          <div id="me-bars" class="res-bars"></div>
+        </div>
+      </div>
+      <div class="seg me-tabs">
+        <button id="me-tab-base" class="seg-btn active">기초</button>
+        <button id="me-tab-gear" class="seg-btn">장신구</button>
+        <button id="me-tab-rec" class="seg-btn">기록</button>
+      </div>
       <div id="me-info" class="me-info"></div>
       <button id="btn-me-back" class="btn-secondary">돌아가기</button>
     </div>
@@ -223,6 +221,14 @@
     <div id="settings-screen" class="overlay hidden">
       <h1 class="title small">⚙️ 설정</h1>
       <div class="settings-list">
+        <div class="settings-row control-move">
+          <span>🎮 조작 방법</span>
+          <div class="seg">
+            <button id="ctrl-touch" class="seg-btn">👆 터치·방향키</button>
+            <button id="ctrl-tilt" class="seg-btn">📱 기울이기</button>
+          </div>
+        </div>
+        <p id="control-desc" class="control-desc"></p>
         <div class="settings-row"><span>🔔 효과음</span><div class="seg"><button id="set-sfx-on" class="seg-btn">켬</button><button id="set-sfx-off" class="seg-btn">끔</button></div></div>
         <div class="settings-row"><span>🎵 배경음악</span><div class="seg"><button id="set-music-on" class="seg-btn">켬</button><button id="set-music-off" class="seg-btn">끔</button></div></div>
         <div class="settings-row"><span>📳 진동</span><div class="seg"><button id="set-vib-on" class="seg-btn">켬</button><button id="set-vib-off" class="seg-btn">끔</button></div></div>
