@@ -934,6 +934,16 @@ function shoot() {
   missionEvent('Shoot');
 }
 
+// ---------- 보스 아레나 종료 ----------
+function endBossArena() {
+  boss = null;
+  bossShots = [];
+  for (const p of platforms) {
+    if (p.arena) addBurst(p.x + p.w / 2, p.y, '#f6e58d');
+  }
+  platforms = platforms.filter((p) => !p.arena);
+}
+
 // ---------- 대포 발사 ----------
 function fireCannon() {
   if (!holdCannon) return;
@@ -1353,12 +1363,28 @@ function update() {
       x: W / 2,
       y: cameraY + 95,
       vx: (1.1 + tier * 0.25) * (Math.random() < 0.5 ? -1 : 1),
-      t: 1080, // 18초 후 떠남
-      shot: 80,
+      t: 1500, // 25초 후 떠남
+      shot: 90,
+      pattern: 0,
       wobble: 0,
     };
     nextBossAt += 5000;
-    addFloat('👹 보스 등장! 총으로 쏘세요!', W / 2, 190, '#c0392b', 18, true);
+    // 보스 아레나: 카메라가 멈추고 전용 발판이 생김 — 패턴을 피하며 싸운다!
+    const mkArena = (x, ay, w) => {
+      const p = makePlatform(x, ay, PlatType.NORMAL);
+      p.x = x; p.w = w; p.baseW = w;
+      p.pulse = false; p.spring = false; p.jetpack = false;
+      p.arena = true;
+      platforms.push(p);
+    };
+    mkArena(28, cameraY + 565, 104);
+    mkArena(228, cameraY + 565, 104);
+    mkArena(56, cameraY + 445, 92);
+    mkArena(212, cameraY + 445, 92);
+    mkArena(123, cameraY + 335, 114);
+    monsters = []; // 아레나에선 보스에게 집중
+    bossShots = [];
+    addFloat('👹 보스 등장! 발판을 오가며 피하세요!', W / 2, 190, '#c0392b', 17, true);
     beep(70, 0.6, 'sawtooth', 0.22);
     vib(100);
   }
@@ -1369,17 +1395,38 @@ function update() {
     if (boss.x < 45 || boss.x > W - 45) boss.vx *= -1;
     boss.y += ((cameraY + 95) - boss.y) * 0.08; // 카메라 상단을 따라옴
     if (--boss.shot <= 0) {
-      boss.shot = Math.max(45, 85 - boss.tier * 8);
-      bossShots.push({ x: boss.x, y: boss.y + 28, vy: 4.0 + boss.tier * 0.3 });
+      boss.shot = Math.max(55, 105 - boss.tier * 8);
+      boss.pattern = (boss.pattern + 1) % 3;
+      const spd = 3.1 + boss.tier * 0.25;
+      if (boss.pattern === 0) {
+        // 조준탄: 플레이어 방향으로
+        const dx = clamp((player.x - boss.x) / 65, -2.2, 2.2);
+        bossShots.push({ x: boss.x, y: boss.y + 28, vx: dx, vy: spd });
+      } else if (boss.pattern === 1) {
+        // 3갈래 부채꼴
+        for (const vx of [-1.7, 0, 1.7]) {
+          bossShots.push({ x: boss.x, y: boss.y + 28, vx, vy: spd * 0.95 });
+        }
+      } else {
+        // 양옆 낙하탄
+        bossShots.push({ x: boss.x - 34, y: boss.y + 22, vx: 0, vy: spd });
+        bossShots.push({ x: boss.x + 34, y: boss.y + 22, vx: 0, vy: spd });
+      }
       beep(200, 0.08, 'square', 0.1);
     }
     if (boss.t <= 0) {
-      boss = null;
+      endBossArena();
       addFloat('보스가 물러갔다...', W / 2, 190, '#57606f', 15, true);
+    }
+    // 아레나 천장: 보스 위로는 못 올라감
+    if (player.y < cameraY + 55) {
+      player.y = cameraY + 55;
+      if (player.vy < 0) player.vy = 0;
     }
   }
   for (const bs of bossShots) {
     bs.y += bs.vy;
+    bs.x += bs.vx || 0;
     if (invincible <= 0 && !holdCannon &&
         Math.hypot(player.x - bs.x, player.y - bs.y) < 18) {
       bs.y = cameraY + H + 999;
@@ -1460,16 +1507,16 @@ function update() {
         wallet += reward;
         stats.coins += reward;
         saveWallet();
+        score += 300; // 격파 보너스 점수
         missionFlash = 140;
         flashMain = '👹 보스 격파!';
-        flashSub = `+${reward}🪙`;
+        flashSub = `+${reward}🪙 +300점`;
         addBurst(boss.x, boss.y, '#c0392b');
         addBurst(boss.x, boss.y, '#f6e58d');
         shakeT = 14;
         sfx.bonus();
         vib(120);
-        boss = null;
-        bossShots = [];
+        endBossArena();
       }
       continue;
     }
@@ -1504,9 +1551,9 @@ function update() {
   }
   particles = particles.filter((pt) => pt.life > 0);
 
-  // --- 카메라 스크롤 & 점수 ---
+  // --- 카메라 스크롤 & 점수 (보스전에는 카메라 고정) ---
   const threshold = cameraY + H * 0.4;
-  if (player.y < threshold) {
+  if (!boss && player.y < threshold) {
     const diff = threshold - player.y;
     cameraY -= diff;
     score += Math.round(diff);
@@ -1831,6 +1878,19 @@ function drawPlatform(p) {
     // 아래 어두운 흙 라인
     ctx.fillStyle = 'rgba(20, 90, 50, 0.35)';
     roundRect(p.x + 2, y + p.h - 4, p.w - 4, 3, 2);
+    // 보스 아레나 발판: 금빛 테두리
+    if (p.arena) {
+      ctx.strokeStyle = `rgba(246, 185, 59, ${0.6 + 0.4 * Math.sin(frame * 0.12)})`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(p.x + 7, y);
+      ctx.arcTo(p.x + p.w, y, p.x + p.w, y + p.h, 7);
+      ctx.arcTo(p.x + p.w, y + p.h, p.x, y + p.h, 7);
+      ctx.arcTo(p.x, y + p.h, p.x, y, 7);
+      ctx.arcTo(p.x, y, p.x + p.w, y, 7);
+      ctx.closePath();
+      ctx.stroke();
+    }
   }
 
   // 스프링: 코일 + 빨간 캡
