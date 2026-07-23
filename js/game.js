@@ -88,7 +88,7 @@ function applySettings() {
 
 // ---------- 캔버스 ----------
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
+let ctx = canvas.getContext('2d');
 let scale = 1;
 
 function resize() {
@@ -3883,6 +3883,66 @@ function renderChars() {
   }
 }
 
+// ---------- 내 정보 화면 ----------
+const COSMETIC_NAMES = {
+  bow: '🎀 리본', hat: '🧢 빨간 모자', headphones: '🎧 헤드폰', tophat: '🎩 마술사 모자',
+  crown: '👑 왕관', glasses: '😎 선글라스', scarf: '🧣 목도리', cape: '🦸 빨간 망토', wings: '🪽 천사 날개',
+};
+let meTimer = null;
+
+function renderMePreview() {
+  const pv = $('me-preview');
+  const pctx = pv.getContext('2d');
+  const mainCtx = ctx;
+  ctx = pctx; // 액세서리 그리기 함수들이 전역 ctx를 쓰므로 잠시 교체
+  try {
+    pctx.clearRect(0, 0, 180, 180);
+    if (state === State.MENU) frame++; // 망토/날개 애니메이션용
+    pctx.save();
+    pctx.translate(90, 96);
+    pctx.scale(2.7, 2.7);
+    drawAccessoriesBack();
+    if (charImgs.left) pctx.drawImage(charImgs.left, -23, -23, 46, 46);
+    drawAccessoriesFront();
+    pctx.restore();
+  } finally {
+    ctx = mainCtx;
+  }
+}
+
+function renderMe() {
+  const C = CHARACTERS[curChar];
+  const title = localStorage.getItem('jump-title');
+  $('me-name').innerHTML = `${C.emoji} ${C.name}${title ? ` <small>🎖️ ${title}</small>` : ''}<small>${C.desc}</small>`;
+
+  const worn = COSMETICS.filter((k) => equip[k] && inv[k]).map((k) => COSMETIC_NAMES[k]);
+  const upgRows = Object.entries(UPGRADES)
+    .map(([k, d]) => `<div class="me-row"><span>${d.icon} ${d.name}</span><b>${upg[k] > 0 ? `Lv.${upg[k]}/${d.max}` : '—'}</b></div>`)
+    .join('');
+  const items = `<div class="me-row"><span>❤️ 생명</span><b>${inv.life}</b></div>
+    <div class="me-row"><span>🚀 로켓 출발</span><b>${inv.rocket}</b></div>
+    <div class="me-row"><span>🧲 코인 자석</span><b>${inv.magnet}</b></div>`;
+  const st = `
+    <div class="me-row"><span>🏆 최고 기록</span><b>${best.toLocaleString()}</b></div>
+    <div class="me-row"><span>🎮 플레이 횟수</span><b>${stats.runs.toLocaleString()}판</b></div>
+    <div class="me-row"><span>📈 누적 점수</span><b>${stats.totalScore.toLocaleString()}</b></div>
+    <div class="me-row"><span>🪙 누적 코인</span><b>${stats.coins.toLocaleString()}</b></div>
+    <div class="me-row"><span>👾 몬스터 처치</span><b>${stats.kills.toLocaleString()}</b></div>
+    <div class="me-row"><span>🔥 최고 콤보</span><b>x${stats.maxCombo}</b></div>
+    <div class="me-row"><span>🎯 미션 완수</span><b>${stats.missions}</b></div>
+    <div class="me-row"><span>📖 도감</span><b>${dex.size}/${Object.keys(DEX).length}</b></div>
+    <div class="me-row"><span>🌕 달 착륙</span><b>${stats.moon ? '성공!' : '아직'}</b></div>`;
+
+  $('me-info').innerHTML = `
+    <div class="me-section"><h3>👒 착용 중인 장신구</h3>
+      ${worn.length ? worn.map((w) => `<div class="me-row"><span>${w}</span><b>착용 ✓</b></div>`).join('') : '<div class="me-row"><span>없음 — 상점에서 꾸며보세요!</span></div>'}
+    </div>
+    <div class="me-section"><h3>💪 강화 스탯</h3>${upgRows}</div>
+    <div class="me-section"><h3>🎒 보유 아이템</h3>${items}</div>
+    <div class="me-section"><h3>📊 누적 통계</h3>${st}</div>`;
+  renderMePreview();
+}
+
 // ---------- 도감 화면 ----------
 function renderDex() {
   const grid = $('dex-grid');
@@ -4089,6 +4149,8 @@ function goHome() {
   $('char-screen').classList.add('hidden');
   $('settings-screen').classList.add('hidden');
   $('dex-screen').classList.add('hidden');
+  $('me-screen').classList.add('hidden');
+  if (meTimer) { clearInterval(meTimer); meTimer = null; }
   pauseBtn.classList.add('hidden');
   fireBtn.classList.add('hidden');
   startScreen.classList.remove('hidden');
@@ -4194,6 +4256,17 @@ $('btn-settings').addEventListener('click', () => {
   $('settings-screen').classList.remove('hidden');
 });
 $('btn-settings-back').addEventListener('click', goHome);
+$('btn-me').addEventListener('click', () => {
+  startScreen.classList.add('hidden');
+  renderMe();
+  $('me-screen').classList.remove('hidden');
+  if (meTimer) clearInterval(meTimer);
+  meTimer = setInterval(renderMePreview, 70); // 망토·날개 팔랑임
+});
+$('btn-me-back').addEventListener('click', () => {
+  if (meTimer) { clearInterval(meTimer); meTimer = null; }
+  goHome();
+});
 $('btn-dex').addEventListener('click', () => {
   startScreen.classList.add('hidden');
   renderDex();
