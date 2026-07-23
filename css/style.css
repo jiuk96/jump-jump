@@ -706,3 +706,8 @@ html, body {
 }
 
 .ach-title-btn.on { background: #27ae60; }
+
+.dex-bar { height: 5px; border-radius: 3px; background: #dfe4ea; overflow: hidden; margin: 3px 4px 0; }
+.dex-bar > div { height: 100%; border-radius: 3px; background: linear-gradient(90deg, #1abc9c, #16a085); }
+.dex-prog { font-size: 10px; font-weight: 800; color: #16a085; display: block; margin-top: 2px; }
+.dex-prog.done { color: #e67e22; }
