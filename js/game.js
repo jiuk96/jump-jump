@@ -4623,6 +4623,21 @@ bindMoveBtn('btn-right', 'right');
 function showMoveBtns(show) {
   moveBtns.classList.toggle('hidden', !show || controlMode !== 'touch');
 }
+// 🏃 문 런 전용 점프/슬라이드 버튼
+(() => {
+  const jb = $('btn-jump'), sb = $('btn-slide');
+  const jOn = (e) => { e.preventDefault(); runnerJump(); };
+  const sOn = (e) => { e.preventDefault(); if (R) R.slideHeld = true; };
+  const sOff = (e) => { e.preventDefault(); if (R) R.slideHeld = false; };
+  jb.addEventListener('touchstart', jOn, { passive: false });
+  jb.addEventListener('mousedown', jOn);
+  sb.addEventListener('touchstart', sOn, { passive: false });
+  sb.addEventListener('touchend', sOff, { passive: false });
+  sb.addEventListener('touchcancel', sOff, { passive: false });
+  sb.addEventListener('mousedown', sOn);
+  sb.addEventListener('mouseup', sOff);
+  sb.addEventListener('mouseleave', () => { if (R) R.slideHeld = false; });
+})();
 function updateFireBtn() {
   if (reloading > 0) {
     fireBtn.innerHTML = `⏳<span class="ammo">${Math.ceil((reloading / reloadTime()) * 100)}%</span>`;
@@ -5149,6 +5164,7 @@ function gameOver() {
 function goHome() {
   runnerMode = false;
   R = null;
+  $('run-btns').classList.add('hidden');
   state = State.MENU;
   bgm.stop();
   overScreen.classList.add('hidden');
@@ -5195,7 +5211,8 @@ function startRunner() {
   $('char-screen').classList.add('hidden');
   pauseBtn.classList.remove('hidden');
   fireBtn.classList.add('hidden'); // 러너에선 총 없음
-  showMoveBtns(false); // 러너는 탭 조작
+  showMoveBtns(false);
+  $('run-btns').classList.remove('hidden'); // ⬆️⬇️ 러너 전용 버튼
   photoMode = false;
   bgm.start();
 }
@@ -5223,7 +5240,7 @@ function initRunner() {
 }
 
 function runnerSpeed() {
-  return 4.2 + Math.min(4.8, R.dist / 2600);
+  return 5.2 + Math.min(6.0, R.dist / 1500); // 시원한 기본 속도 + 빠른 가속 (최대 11.2)
 }
 
 function runnerJump() {
@@ -5261,6 +5278,7 @@ function runnerHit(kind) {
 
 function runnerOver() {
   state = State.OVER;
+  $('run-btns').classList.add('hidden');
   bgm.stop();
   vib(160);
   const m = Math.floor(R.dist);
@@ -5295,49 +5313,93 @@ function updateRunner() {
   // 첫 안내
   if (!R.hinted) {
     R.hinted = true;
-    announce('👈 왼쪽 탭: 슬라이드 · 오른쪽 탭: 점프 👉', '#2c3e50', 220);
+    announce('⬆️ 점프 · ⬇️ 슬라이드 버튼으로 조작! (화면 탭도 가능)', '#2c3e50', 220);
   }
 
-  // --- 스폰 ---
+  // --- 스폰: 패턴 기반 (거리에 따라 다양한 조합 해금) ---
   if (R.gapSafe > 0) R.gapSafe--;
   if (--R.spawnT <= 0) {
-    const d = Math.min(1, R.dist / 2500);
-    R.spawnT = Math.round(rand(52, 96) * (4.2 / spd));
-    const roll = Math.random();
+    const d = Math.min(1, R.dist / 2000);
+    R.spawnT = Math.round(rand(42, 74) * (5.2 / spd));
     const sx = W + 50;
-    if (roll < 0.16) { // 코인 아치
-      const arc = Math.random() < 0.5;
-      for (let i = 0; i < 5; i++) {
-        const yy = arc ? R_GROUND - 46 - Math.sin((i / 4) * Math.PI) * 66 : R_GROUND - 40 - (Math.random() < 0.5 ? 0 : 70);
-        R.pickups.push({ x: sx + i * 30, y: arc ? yy : R_GROUND - 42, kind: 'coin', spin: rand(0, 6) });
+    const roll = Math.random();
+    if (roll < 0.14) { // 코인 아치 / 슬라럼
+      if (Math.random() < 0.5) {
+        for (let i = 0; i < 5; i++) {
+          R.pickups.push({ x: sx + i * 30, y: R_GROUND - 46 - Math.sin((i / 4) * Math.PI) * 66, kind: 'coin', spin: rand(0, 6) });
+        }
+      } else { // 위-아래 슬라럼
+        for (let i = 0; i < 6; i++) {
+          R.pickups.push({ x: sx + i * 34, y: R_GROUND - (i % 2 === 0 ? 34 : 104), kind: 'coin', spin: rand(0, 6) });
+        }
       }
-    } else if (roll < 0.19 && R.hearts < 3 && R.dist > 300) {
+    } else if (roll < 0.17 && R.hearts < 3 && R.dist > 300) {
       R.pickups.push({ x: sx, y: R_GROUND - 90, kind: 'heart', spin: 0 });
-    } else if (roll < 0.22 && R.dist > 400) {
+    } else if (roll < 0.20 && R.dist > 400) {
       R.pickups.push({ x: sx, y: R_GROUND - 110, kind: 'star', spin: 0 });
-    } else if (roll < 0.40 && d > 0.25 && R.gapSafe <= 0) { // 구덩이
-      const gw = rand(64, 104 + d * 40);
-      R.gaps.push({ x: sx, w: gw });
-      R.gapSafe = 90;
-    } else if (roll < 0.58 && d > 0.15) { // 레이저 게이트 (슬라이드!)
-      R.obstacles.push({ x: sx, y: R_GROUND - 58, w: 96, h: 20, kind: 'beam', ph: rand(0, 6) });
-    } else if (roll < 0.72 && d > 0.35) { // 외계인 (마주 걸어옴)
-      R.obstacles.push({ x: sx, y: R_GROUND - 26, w: 26, h: 26, kind: 'alien', ph: rand(0, 6), vx: 0.9 });
-    } else if (roll < 0.86) { // 바위
-      R.obstacles.push({ x: sx, y: R_GROUND - 28, w: 28, h: 28, kind: 'rock', ph: rand(0, 6) });
-    } else { // 수정 기둥 (높음 — 더블 점프!)
-      R.obstacles.push({ x: sx, y: R_GROUND - 48, w: 26, h: 48, kind: 'crystal', ph: rand(0, 6) });
-    }
-    // 후반: 가끔 콤보 배치 (바위 + 게이트)
-    if (d > 0.55 && Math.random() < 0.25) {
-      R.obstacles.push({ x: sx + 150, y: R_GROUND - 28, w: 28, h: 28, kind: 'rock', ph: rand(0, 6) });
+    } else {
+      // 장애물 패턴 헬퍼
+      const rock = (x) => R.obstacles.push({ x, y: R_GROUND - 28, w: 28, h: 28, kind: 'rock', ph: rand(0, 6) });
+      const crystal = (x) => R.obstacles.push({ x, y: R_GROUND - 48, w: 26, h: 48, kind: 'crystal', ph: rand(0, 6) });
+      const beam = (x) => R.obstacles.push({ x, y: R_GROUND - 58, w: 96, h: 20, kind: 'beam', ph: rand(0, 6) });
+      const alien = (x) => R.obstacles.push({ x, y: R_GROUND - 26, w: 26, h: 26, kind: 'alien', ph: rand(0, 6), vx: 0.9 + d * 0.6 });
+      const drone = (x) => R.obstacles.push({ x, y: R_GROUND - 88, baseY: R_GROUND - 88, w: 30, h: 20, kind: 'drone', ph: rand(0, 6) });
+      const meteor = (x) => R.obstacles.push({ x, y: -999, w: 22, h: 26, kind: 'meteor', phase: 'warn', warnT: 52, ph: rand(0, 6) });
+      const gap = (x, wMul = 1) => {
+        if (R.gapSafe > 0) { rock(x); return; }
+        R.gaps.push({ x, w: rand(64, 104 + d * 40) * wMul });
+        R.gapSafe = 80;
+      };
+      // [필요 난이도, 가중치, 생성 함수, 추가 스폰 지연]
+      const P = [
+        [0.00, 3.0, () => rock(sx), 0],
+        [0.08, 2.2, () => beam(sx), 0],
+        [0.12, 2.0, () => { rock(sx); rock(sx + 110 + d * 30); }, 14],       // 연속 점프
+        [0.20, 2.0, () => crystal(sx), 0],
+        [0.25, 2.0, () => gap(sx), 0],
+        [0.28, 1.8, () => { beam(sx); rock(sx + 165); }, 16],                // 슬라이드→점프
+        [0.32, 1.8, () => alien(sx), 0],
+        [0.38, 1.6, () => drone(sx), 0],                                     // 점프 금지 드론
+        [0.42, 1.5, () => { beam(sx); beam(sx + 185); }, 20],                // 이중 게이트
+        [0.48, 1.5, () => { gap(sx); rock(sx + 200); }, 18],                 // 구덩이→점프
+        [0.55, 1.4, () => { rock(sx); crystal(sx + 135); }, 16],             // 점프→더블 점프
+        [0.60, 1.4, () => meteor(sx + rand(-30, 60)), 0],                    // ☄️ 운석 낙하 (경고 후)
+        [0.68, 1.2, () => { alien(sx); beam(sx + 170); }, 20],               // 외계인→슬라이드
+        [0.76, 1.1, () => { drone(sx); rock(sx + 120); }, 18],               // 드론 밑 통과→점프
+        [0.85, 1.0, () => { rock(sx); rock(sx + 100); rock(sx + 200); }, 26] // 트리플 점프
+      ];
+      const pool = P.filter((pt) => d >= pt[0]);
+      let total = 0;
+      for (const pt of pool) total += pt[1];
+      let pick = Math.random() * total;
+      for (const pt of pool) {
+        pick -= pt[1];
+        if (pick <= 0) { pt[2](); R.spawnT += pt[3]; break; }
+      }
     }
   }
   // 장식 크레이터
   if (Math.random() < 0.02) R.craters.push({ x: W + 60, w: rand(24, 54) });
 
   // --- 이동/정리 ---
-  for (const o of R.obstacles) o.x -= spd + (o.kind === 'alien' ? o.vx : 0);
+  for (const o of R.obstacles) {
+    o.x -= spd + (o.kind === 'alien' ? o.vx : 0);
+    if (o.kind === 'drone') o.y = o.baseY + Math.sin(frame * 0.12 + o.ph) * 9; // 둥실둥실
+    if (o.kind === 'meteor') { // ☄️ 경고 → 낙하 → 지면 잔해
+      if (o.phase === 'warn') {
+        if (--o.warnT <= 0) { o.phase = 'fall'; o.y = -30; beep(500, 0.2, 'sawtooth', 0.14); }
+      } else if (o.phase === 'fall') {
+        o.y += 17;
+        if (o.y >= R_GROUND - 26) {
+          o.y = R_GROUND - 26;
+          o.phase = 'ground';
+          shakeT = Math.max(shakeT, 7);
+          sfx.break();
+          for (let i = 0; i < 8; i++) particles.push({ x: o.x + rand(-14, 14), y: R_GROUND - 4, vx: rand(-2, 2), vy: rand(-2.5, -0.5), life: rand(12, 22), color: '#ff9f43' });
+        }
+      }
+    }
+  }
   for (const c of R.pickups) c.x -= spd;
   for (const g of R.gaps) g.x -= spd;
   for (const cr of R.craters) cr.x -= spd;
@@ -5473,6 +5535,21 @@ function drawRunner() {
   ctx.ellipse(4, -12, 14, 4, 0.2, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
+  // 고속 스피드라인 (속도감 연출)
+  if (R && runnerSpeed() > 6.3 && state === State.PLAYING) {
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 7; i++) {
+      const ly = 60 + ((i * 97) % (R_GROUND - 120));
+      const lx = W - ((R.dist * 46 + i * 173) % (W + 160)) + 40;
+      const ln = 30 + (i % 3) * 22;
+      ctx.beginPath();
+      ctx.moveTo(lx, ly);
+      ctx.lineTo(lx + ln, ly);
+      ctx.stroke();
+    }
+  }
+
   // 먼 산등성이 (패럴랙스)
   ctx.fillStyle = '#2e3560';
   ctx.beginPath();
@@ -5600,6 +5677,76 @@ function drawRunner() {
         ctx.lineWidth = 2;
         ctx.strokeStyle = '#fff0f0';
         ctx.stroke();
+      } else if (o.kind === 'drone') {
+        // 정찰 드론: 점프하지 말고 밑으로!
+        ctx.translate(o.x + o.w / 2, o.y + o.h / 2);
+        ctx.fillStyle = '#8395a7';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 16, 7.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#c8d6e5';
+        ctx.beginPath();
+        ctx.ellipse(0, -5, 8.5, 5.5, 0, Math.PI, 0);
+        ctx.fill();
+        const blink = Math.floor(frame / 8 + o.ph) % 3;
+        for (let i = -1; i <= 1; i++) {
+          ctx.fillStyle = i === blink - 1 ? '#ff6b6b' : 'rgba(255,255,255,0.55)';
+          ctx.beginPath();
+          ctx.arc(i * 9, 2.5, 2.1, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.strokeStyle = 'rgba(255, 107, 107, 0.5)';
+        ctx.setLineDash([4, 5]);
+        ctx.beginPath();
+        ctx.moveTo(0, 8);
+        ctx.lineTo(0, R_GROUND - (o.y + o.h / 2));
+        ctx.stroke();
+        ctx.setLineDash([]);
+      } else if (o.kind === 'meteor') {
+        if (o.phase === 'warn') {
+          // 낙하 경고: 지면에 빨간 표시 + 상단 ⚠
+          const bl = Math.floor(frame / 6) % 2 === 0;
+          ctx.globalAlpha = bl ? 0.9 : 0.45;
+          ctx.strokeStyle = '#ff4d4d';
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.ellipse(o.x + o.w / 2, R_GROUND + 3, 20, 6, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.font = '900 20px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#ff4d4d';
+          ctx.fillText('⚠', o.x + o.w / 2, 46);
+          ctx.globalAlpha = 1;
+        } else {
+          // 불타는 운석
+          ctx.translate(o.x + o.w / 2, o.y + o.h / 2);
+          if (o.phase === 'fall') {
+            ctx.fillStyle = 'rgba(255, 159, 67, 0.55)';
+            ctx.beginPath();
+            ctx.ellipse(3, -26, 7, 22, 0.15, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.shadowColor = 'rgba(255, 120, 40, 0.8)';
+          ctx.shadowBlur = 10;
+          ctx.fillStyle = '#8d6e63';
+          ctx.strokeStyle = '#5d4037';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(-11, 10);
+          ctx.lineTo(-9, -8);
+          ctx.lineTo(0, -13);
+          ctx.lineTo(10, -6);
+          ctx.lineTo(11, 10);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = 'rgba(255, 159, 67, 0.9)';
+          ctx.beginPath();
+          ctx.arc(-3, 0, 2.6, 0, Math.PI * 2);
+          ctx.arc(5, 3, 1.8, 0, Math.PI * 2);
+          ctx.fill();
+        }
       } else if (o.kind === 'alien') {
         const bob = Math.sin(frame * 0.25 + o.ph) * 2.5;
         ctx.translate(o.x + o.w / 2, o.y + o.h + bob * 0.3);
@@ -5755,8 +5902,8 @@ function drawRunner() {
     ctx.fillText('🌕 시리즈2 · 문 런', W / 2, H / 2 + 34);
     ctx.font = '700 15px sans-serif';
     ctx.fillStyle = '#cdd3ff';
-    ctx.fillText('왼쪽 탭 = 슬라이드 · 오른쪽 탭 = 점프', W / 2, H / 2 + 66);
-    ctx.fillText('(방향키 ↓ = 슬라이드, ↑/스페이스 = 점프)', W / 2, H / 2 + 90);
+    ctx.fillText('⬆️ 점프 버튼 · ⬇️ 슬라이드 버튼', W / 2, H / 2 + 66);
+    ctx.fillText('(화면 좌/우 탭, 방향키 ↑↓도 가능)', W / 2, H / 2 + 90);
   }
   ctx.restore();
 }
@@ -6070,7 +6217,7 @@ $('mp-reset').addEventListener('click', () => {
 });
 
 // ---------- 버전 표시 & 최신 버전 유도 ----------
-const GAME_VERSION = 58; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
+const GAME_VERSION = 59; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
 const verLabel = $('version-label');
 function setVerLabel(txt, cls) {
   if (!verLabel) return;
