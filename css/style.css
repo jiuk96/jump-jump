@@ -1196,3 +1196,11 @@ html, body {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.06); }
 }
+
+/* ---------- 랭킹: 시리즈 선택 세그 ---------- */
+.lb-series-seg {
+  margin-bottom: 6px;
+}
+.seg-btn.hidden {
+  display: none;
+}
