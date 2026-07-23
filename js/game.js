@@ -902,7 +902,7 @@ function spawnPlatformRow() {
     const isUfo = score > 7000 && wr() < 0.35;
     monsters.push({
       x: wrand(30, W - 30), y: y - 40,
-      w: isUfo ? 50 : 40, h: 34,
+      w: isUfo ? 42 : 32, h: isUfo ? 30 : 27,
       vx: wrand(0.5, 1.2 + d * 0.8) * (wr() < 0.5 ? -1 : 1),
       dead: false,
       wobble: wr() * Math.PI * 2,
@@ -912,9 +912,21 @@ function spawnPlatformRow() {
     });
   }
 
-  // 블랙홀: 6000점부터 드물게 (닿으면 빨려들어감!)
+  // 블랙홀: 6000점부터 드물게 — 발판에서 멀리 떨어진 곳에만 생성
   if (score > 6000 && wr() < 0.010 + d * 0.012) {
-    blackholes.push({ x: wrand(45, W - 45), y: y - wrand(40, 90), r: 24, spin: 0 });
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const bx = wrand(45, W - 45);
+      const by = y - wrand(50, 100);
+      const tooClose = platforms.some((p) => {
+        if (Math.abs(p.y - by) > 85) return false;
+        const nearX = clamp(bx, p.x, p.x + p.w); // 발판에서 가장 가까운 점
+        return Math.hypot(bx - nearX, by - p.y) < 70;
+      });
+      if (!tooClose) {
+        blackholes.push({ x: bx, y: by, r: 24, spin: 0 });
+        break;
+      }
+    }
   }
 
   // 어지러움 구름: 5000점부터 드물게 (통과하면 잠시 조작 반전)
@@ -925,6 +937,21 @@ function spawnPlatformRow() {
   // 대포: 1200점부터 드물게 (떨어져서 들어가면 조준 발사!)
   if (score > 1200 && wr() < 0.009 + d * 0.008) {
     cannons.push({ x: wrand(45, W - 45), y: y - wrand(20, 50), ang: 0, osc: wrand(0, Math.PI * 2), fired: false, timer: 0 });
+  }
+
+  // 새로 생긴 발판이 기존 블랙홀과 가까우면 블랙홀을 밀어내거나 제거
+  for (let i = blackholes.length - 1; i >= 0; i--) {
+    const bh = blackholes[i];
+    const near = (bx) => platforms.some((p) => {
+      if (Math.abs(p.y - bh.y) > 85) return false;
+      const nx = clamp(bx, p.x, p.x + p.w);
+      return Math.hypot(bx - nx, bh.y - p.y) < 70;
+    });
+    if (!near(bh.x)) continue;
+    const cands = [wrand(45, W - 45), wrand(45, W - 45), 45, W - 45];
+    const ok = cands.find((cx) => !near(cx));
+    if (ok !== undefined) bh.x = ok;
+    else blackholes.splice(i, 1);
   }
 
   highestPlatY = y;
@@ -971,21 +998,11 @@ function endBossArena() {
   }
   platforms = platforms.filter((p) => !p.arena);
 
-  // 복귀한 일반 발판 중 화면 중앙 근처의 안전한 발판 위로 바로 안착
-  const cands = platforms.filter((p) =>
-    !p.broken && p.type !== PlatType.BREAKING &&
-    p.y > cameraY + 130 && p.y < cameraY + H - 40);
-  if (cands.length) {
-    cands.sort((a, b) =>
-      Math.abs(a.y - (cameraY + H * 0.6)) - Math.abs(b.y - (cameraY + H * 0.6)));
-    const p = cands[0];
-    player.x = p.x + p.w / 2;
-    player.y = p.y - player.h / 2;
-    addBurst(player.x, player.y, '#7bed9f');
-  }
-  player.vy = jumpV(); // 발판에서 튀어오르며 등반 재개
-  invincible = Math.max(invincible, 180); // 3초 무적으로 안전하게 복귀
+  // 전투 종료 보상: 3초 제트팩 비행 + 무적으로 안전하게 복귀
+  jetpackTimer = 180;
   jetpackSlow = false;
+  invincible = Math.max(invincible, 260);
+  addFloat('🚀 복귀 비행!', player.x, player.y - 44, '#e67e22', 15);
 }
 
 // ---------- 대포 발사 ----------
@@ -1318,10 +1335,10 @@ function update() {
     bh.spin += 0.06;
     const dx = bh.x - player.x, dy = bh.y - player.y;
     const dist = Math.hypot(dx, dy);
-    if (invincible <= 0 && jetpackTimer <= 0 && dist < 120) {
-      const pull = (1 - dist / 120) * 1.15;
+    if (invincible <= 0 && jetpackTimer <= 0 && dist < 95) {
+      const pull = (1 - dist / 95) * 0.6;
       player.vx += (dx / dist) * pull;
-      player.vy += (dy / dist) * pull * 0.8;
+      player.vy += (dy / dist) * pull * 0.6;
       if (dist < bh.r * 0.7) {
         shakeT = 18;
         addBurst(player.x, player.y, '#6c5ce7');
