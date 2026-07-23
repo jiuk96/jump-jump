@@ -3741,10 +3741,9 @@ fireBtn.addEventListener('mousedown', (e) => {
 
 function refreshMenu() {
   const title = localStorage.getItem('jump-title');
-  $('best-score-label').textContent =
-    (title ? `🎖️ ${title}` : '') + (best > 0 ? `${title ? ' · ' : ''}최고 기록 ${best}` : '');
-  $('wallet-label').textContent = `🪙 ${wallet}`;
-  refreshControlUI();
+  $('best-score-label').textContent = best.toLocaleString();
+  $('wallet-label').textContent = wallet.toLocaleString();
+  $('title-sub').textContent = title ? `🎖️ ${title}` : '하늘 끝까지 올라가 보세요';
 }
 
 function refreshControlUI() {
@@ -3910,36 +3909,65 @@ function renderMePreview() {
   }
 }
 
+let meTab = 'base';
 function renderMe() {
   const C = CHARACTERS[curChar];
   const title = localStorage.getItem('jump-title');
   $('me-name').innerHTML = `${C.emoji} ${C.name}${title ? ` <small>🎖️ ${title}</small>` : ''}<small>${C.desc}</small>`;
 
-  const worn = COSMETICS.filter((k) => equip[k] && inv[k]).map((k) => COSMETIC_NAMES[k]);
-  const upgRows = Object.entries(UPGRADES)
-    .map(([k, d]) => `<div class="me-row"><span>${d.icon} ${d.name}</span><b>${upg[k] > 0 ? `Lv.${upg[k]}/${d.max}` : '—'}</b></div>`)
-    .join('');
-  const items = `<div class="me-row"><span>❤️ 생명</span><b>${inv.life}</b></div>
-    <div class="me-row"><span>🚀 로켓 출발</span><b>${inv.rocket}</b></div>
-    <div class="me-row"><span>🧲 코인 자석</span><b>${inv.magnet}</b></div>`;
-  const st = `
-    <div class="me-row"><span>🏆 최고 기록</span><b>${best.toLocaleString()}</b></div>
-    <div class="me-row"><span>🎮 플레이 횟수</span><b>${stats.runs.toLocaleString()}판</b></div>
-    <div class="me-row"><span>📈 누적 점수</span><b>${stats.totalScore.toLocaleString()}</b></div>
-    <div class="me-row"><span>🪙 누적 코인</span><b>${stats.coins.toLocaleString()}</b></div>
-    <div class="me-row"><span>👾 몬스터 처치</span><b>${stats.kills.toLocaleString()}</b></div>
-    <div class="me-row"><span>🔥 최고 콤보</span><b>x${stats.maxCombo}</b></div>
-    <div class="me-row"><span>🎯 미션 완수</span><b>${stats.missions}</b></div>
-    <div class="me-row"><span>📖 도감</span><b>${dex.size}/${Object.keys(DEX).length}</b></div>
-    <div class="me-row"><span>🌕 달 착륙</span><b>${stats.moon ? '성공!' : '아직'}</b></div>`;
+  // 자원 바 (생명/로켓/자석 보유량)
+  const bar = (label, cls, n, max) => `
+    <div class="res-row">
+      <span class="res-label">${label}</span>
+      <div class="res-track ${cls}"><div style="width:${Math.round((Math.min(n, max) / max) * 100)}%"></div></div>
+      <span class="res-val">${n}/${max}</span>
+    </div>`;
+  $('me-bars').innerHTML =
+    bar('❤️ 생명', 'res-life', inv.life, 3) +
+    bar('🚀 로켓', 'res-rocket', inv.rocket, 9) +
+    bar('🧲 자석', 'res-magnet', inv.magnet, 9);
 
-  $('me-info').innerHTML = `
-    <div class="me-section"><h3>👒 착용 중인 장신구</h3>
+  $('me-tab-base').classList.toggle('active', meTab === 'base');
+  $('me-tab-gear').classList.toggle('active', meTab === 'gear');
+  $('me-tab-rec').classList.toggle('active', meTab === 'rec');
+
+  if (meTab === 'base') {
+    // 실효 수치 스탯 그리드 (강화·캐릭터 능력 반영)
+    const jumpPct = upg.jump * 2 + (curChar === 'rabbit' ? 10 : 0);
+    const coinPct = upg.coinup * 5 + (curChar === 'penguin' ? 10 : 0);
+    const cell = (icon, name, val, boost) =>
+      `<div class="stat-cell${boost ? ' boost' : ''}"><span>${icon} ${name}</span><b>${val}</b></div>`;
+    $('me-info').innerHTML = `<div class="stat-grid">
+      ${cell('🦵', '점프력', jumpPct > 0 ? `+${jumpPct}%` : '기본', jumpPct > 0)}
+      ${cell('💰', '코인 획득', coinPct > 0 ? `+${coinPct}%` : '기본', coinPct > 0)}
+      ${cell('🔫', '탄창', `${ammoMax()}발`, upg.ammo > 0)}
+      ${cell('⏱️', '재장전', `${(reloadTime() / 60).toFixed(2)}초`, upg.reload > 0)}
+      ${cell('🧲', '기본 자석', upg.magnet > 0 ? `${[0, 45, 65, 85][upg.magnet]}px` : '없음', upg.magnet > 0)}
+      ${cell('🧯', '내열', upg.fireslow > 0 ? `-${upg.fireslow * 8}%` : '기본', upg.fireslow > 0)}
+      ${cell('❤️', '부활 무적', `${((REVIVE_INVINCIBLE + upg.revive * 60) / 60).toFixed(0)}초`, upg.revive > 0)}
+      ${cell('🚀', '출발 부스트', upg.rocket > 0 ? `${(upg.rocket * 0.5).toFixed(1)}초` : '없음', upg.rocket > 0)}
+      ${cell('⭐', '스타 목표', `${starGoalNow()}개`, upg.star > 0)}
+      ${cell('🐾', '특성', C.name === '둥이' ? '밸런스' : C.desc.split(' ·')[0], curChar !== 'dungi')}
+    </div>`;
+  } else if (meTab === 'gear') {
+    const worn = COSMETICS.filter((k) => equip[k] && inv[k]).map((k) => COSMETIC_NAMES[k]);
+    const ownedN = COSMETICS.filter((k) => inv[k]).length;
+    $('me-info').innerHTML = `<div class="me-section"><h3>👒 착용 중 (보유 ${ownedN}/${COSMETICS.length})</h3>
       ${worn.length ? worn.map((w) => `<div class="me-row"><span>${w}</span><b>착용 ✓</b></div>`).join('') : '<div class="me-row"><span>없음 — 상점에서 꾸며보세요!</span></div>'}
-    </div>
-    <div class="me-section"><h3>💪 강화 스탯</h3>${upgRows}</div>
-    <div class="me-section"><h3>🎒 보유 아이템</h3>${items}</div>
-    <div class="me-section"><h3>📊 누적 통계</h3>${st}</div>`;
+    </div>`;
+  } else {
+    $('me-info').innerHTML = `<div class="me-section"><h3>📊 누적 기록</h3>
+      <div class="me-row"><span>🏆 최고 기록</span><b>${best.toLocaleString()}</b></div>
+      <div class="me-row"><span>🎮 플레이 횟수</span><b>${stats.runs.toLocaleString()}판</b></div>
+      <div class="me-row"><span>📈 누적 점수</span><b>${stats.totalScore.toLocaleString()}</b></div>
+      <div class="me-row"><span>🪙 누적 코인</span><b>${stats.coins.toLocaleString()}</b></div>
+      <div class="me-row"><span>👾 몬스터 처치</span><b>${stats.kills.toLocaleString()}</b></div>
+      <div class="me-row"><span>🔥 최고 콤보</span><b>x${stats.maxCombo}</b></div>
+      <div class="me-row"><span>🎯 미션 완수</span><b>${stats.missions}</b></div>
+      <div class="me-row"><span>📖 도감</span><b>${dex.size}/${Object.keys(DEX).length}</b></div>
+      <div class="me-row"><span>🌕 달 착륙</span><b>${stats.moon ? '성공!' : '아직'}</b></div>
+    </div>`;
+  }
   renderMePreview();
 }
 
@@ -3973,6 +4001,7 @@ function refreshSettingsUI() {
     ['set-hand-r', !settings.lefty], ['set-hand-l', settings.lefty],
   ];
   for (const [id, on] of map) $(id).classList.toggle('active', on);
+  refreshControlUI();
 }
 
 // ---------- 도전과제 화면 ----------
@@ -4263,6 +4292,9 @@ $('btn-me').addEventListener('click', () => {
   if (meTimer) clearInterval(meTimer);
   meTimer = setInterval(renderMePreview, 70); // 망토·날개 팔랑임
 });
+$('me-tab-base').addEventListener('click', () => { meTab = 'base'; renderMe(); });
+$('me-tab-gear').addEventListener('click', () => { meTab = 'gear'; renderMe(); });
+$('me-tab-rec').addEventListener('click', () => { meTab = 'rec'; renderMe(); });
 $('btn-me-back').addEventListener('click', () => {
   if (meTimer) { clearInterval(meTimer); meTimer = null; }
   goHome();
