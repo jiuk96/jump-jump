@@ -1029,6 +1029,7 @@ let endingT = 0;
 let cleared = false;   // 이번 판 클리어 여부
 let dying = 0;         // 죽음 슬로모션 프레임
 let deathSpin = 0;
+let landSquash = 0;    // 착지 스쿼시 연출 프레임
 let runMaxCombo, runKills, runBosses, runStars; // 이번 판 통계
 let thunderCombo;      // 번개 충전 콤보 (번개 강화)
 let shieldCharges;     // 남은 보호막 (보호막 강화)
@@ -1988,6 +1989,7 @@ function update() {
           sfx.spring();
         } else {
           player.vy = jumpV();
+          landSquash = 9; // 통통 튀는 스쿼시!
           addJumpFx();
           sfx.jump();
         }
@@ -2158,6 +2160,10 @@ function update() {
         }
         saveWallet();
         sfx.coin();
+        for (let sp = 0; sp < 5; sp++) { // ✨ 반짝 스파클
+          const an = (Math.PI * 2 * sp) / 5 + rand(0, 0.8);
+          particles.push({ x: c.x, y: c.y, vx: Math.cos(an) * 1.8, vy: Math.sin(an) * 1.8 - 0.6, life: rand(10, 17), color: sp % 2 ? '#fff6c9' : '#ffd832' });
+        }
         if (cv > 1) addFloat(`+${cv}🪙`, c.x, c.y - 12, '#f1c40f', 13);
         particles.push({ x: c.x, y: c.y, vx: 0, vy: -1.5, life: 18, color: '#f1c40f' });
         missionEvent('Coin');
@@ -2660,10 +2666,65 @@ function drawBackground() {
       drawCloud(cx, cy);
     }
     if (starA > 0.02) {
-      ctx.fillStyle = `rgba(255,255,255,${0.7 * starA})`;
-      ctx.fillRect((cx * 1.7 + 40) % W, (cy * 1.3) % H, 3, 3);
-      ctx.fillRect((cx * 0.6 + 150) % W, (cy * 0.8 + 90) % H, 2, 2);
+      // 반짝이는 별 (십자 스파클 섞음)
+      const tw = 0.5 + Math.sin(frame * 0.06 + i * 1.7) * 0.5;
+      ctx.fillStyle = `rgba(255,255,255,${(0.45 + 0.45 * tw) * starA})`;
+      const sx1 = (cx * 1.7 + 40) % W, sy1 = (cy * 1.3 % H + H) % H;
+      ctx.fillRect(sx1, sy1, 3, 3);
+      ctx.fillRect((cx * 0.6 + 150) % W, ((cy * 0.8 + 90) % H + H) % H, 2, 2);
+      if (i % 3 === 0 && tw > 0.75) { // 가끔 십자 반짝
+        ctx.fillRect(sx1 - 4, sy1 + 1, 11, 1);
+        ctx.fillRect(sx1 + 1, sy1 - 4, 1, 11);
+      }
     }
+  }
+  // 🌈 성층권 오로라 커튼 (8,500~13,500 구간)
+  const auroraA = clamp((score - 8000) / 2500, 0, 1) * clamp((15000 - score) / 3000, 0, 1);
+  if (auroraA > 0.02) {
+    ctx.save();
+    ctx.globalAlpha = auroraA * 0.28;
+    for (let b = 0; b < 3; b++) {
+      const hue = 130 + b * 45;
+      const grad = ctx.createLinearGradient(0, 60 + b * 30, 0, 220 + b * 30);
+      grad.addColorStop(0, `hsla(${hue}, 85%, 65%, 0)`);
+      grad.addColorStop(0.5, `hsla(${hue}, 85%, 65%, 0.8)`);
+      grad.addColorStop(1, `hsla(${hue}, 85%, 65%, 0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      for (let x = 0; x <= W; x += 12) {
+        const y = 130 + b * 26 + Math.sin(x * 0.02 + frame * 0.012 + b * 2) * 34;
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.lineTo(W, 260 + b * 30);
+      ctx.lineTo(0, 260 + b * 30);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  // 🌕 고고도에서 달이 은은히 빛남 (22,000+)
+  const moonA = clamp((score - 20000) / 6000, 0, 1);
+  if (moonA > 0.02) {
+    ctx.save();
+    ctx.globalAlpha = moonA;
+    ctx.shadowColor = 'rgba(255, 250, 220, 0.9)';
+    ctx.shadowBlur = 26;
+    const mg = ctx.createRadialGradient(W - 70 - 6, 96 - 6, 4, W - 70, 96, 30);
+    mg.addColorStop(0, '#fffdf2');
+    mg.addColorStop(1, '#e8e0c8');
+    ctx.fillStyle = mg;
+    ctx.beginPath();
+    ctx.arc(W - 70, 96, 27, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(200, 192, 168, 0.5)';
+    ctx.beginPath();
+    ctx.arc(W - 78, 88, 5.5, 0, Math.PI * 2);
+    ctx.arc(W - 62, 102, 4, 0, Math.PI * 2);
+    ctx.arc(W - 70, 110, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
   ctx.restore();
 
@@ -2767,6 +2828,18 @@ function lerpColor(a, b, t) {
 }
 
 function drawPlatform(p) {
+  { // 발판 아래 은은한 그림자 (공중 부양감)
+    const shY = p.y - cameraY + p.h + 6;
+    if (shY > -20 && shY < H + 20 && !p.broken) {
+      ctx.save();
+      ctx.globalAlpha = 0.10;
+      ctx.fillStyle = '#1e2a38';
+      ctx.beginPath();
+      ctx.ellipse(p.x + p.w / 2, shY, p.w * 0.42, 4.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
   if (boss && !p.arena) return; // 보스전 중 일반 발판 숨김
   const y = p.y - cameraY;
   ctx.save();
@@ -3519,6 +3592,18 @@ function drawPlayer() {
   // 부활 무적: 깜빡임 (보너스 비행 중에는 깜빡이지 않음)
   if (invincible > 0 && jetpackTimer <= 0 && Math.floor(invincible / 6) % 2 === 0) {
     ctx.globalAlpha = 0.35;
+  }
+
+  // 스쿼시&스트레치: 착지 순간 납작 → 상승 중 길쭉 (통통 튀는 느낌)
+  if (landSquash > 0) landSquash--;
+  if (dying <= 0) {
+    if (landSquash > 0) {
+      const t = landSquash / 9;
+      ctx.scale(1 + 0.16 * t, 1 - 0.2 * t);
+    } else if (player.vy < -7 && jetpackTimer <= 0) {
+      const st = clamp((-player.vy - 7) / 10, 0, 1);
+      ctx.scale(1 - 0.08 * st, 1 + 0.12 * st);
+    }
   }
 
   // 제트팩 장착 표시
@@ -5288,6 +5373,10 @@ function initFighter() {
       x: Math.random() * W, y: Math.random() * 800,
       r: Math.random() * 1.5 + 0.5, sp: Math.random() < 0.5 ? 1.6 : 3.2,
     })),
+    nebulas: Array.from({ length: 4 }, (_, i) => ({
+      x: (i * 137 + 60) % W, y: i * 260,
+      r: 70 + (i % 2) * 40, hue: [265, 195, 320, 230][i], sp: 0.5 + (i % 2) * 0.25,
+    })),
   };
 }
 
@@ -5491,10 +5580,12 @@ function updateFighter() {
       if (Math.abs(b.x - e.x) < e.w / 2 + 3 && Math.abs(b.y - e.y) < e.h / 2 + 4) {
         b.gone = true;
         e.hp--;
+        e.flash = 5; // ⚡ 피격 흰 플래시
         if (e.hp <= 0) {
           e.dead = true;
           F.score += e.pts;
           F.booms.push({ x: e.x, y: e.y, r: 3, life: 18 });
+          addFloat(`+${e.pts}`, e.x, e.y - 14, '#ffe66d', 13, true, 40); // 격추 점수 팝업
           sfx.hit();
           const dropRoll = Math.random();
           if (dropRoll < 0.3) F.drops.push({ x: e.x, y: e.y, vy: 2.2, kind: 'coin', spin: rand(0, 6) });
@@ -5548,6 +5639,16 @@ function updateFighter() {
   }
   F.drops = F.drops.filter((dp) => !dp.gone && dp.y < F.vh + 30);
 
+  // 엔진 트레일 (기체 뒤로 이온 꼬리)
+  if (frame % 2 === 0) {
+    particles.push({
+      x: F.x + rand(-3.5, 3.5), y: sy + 22,
+      vx: rand(-0.3, 0.3), vy: rand(2.2, 3.6),
+      life: rand(10, 18),
+      color: Math.random() < 0.5 ? 'rgba(120, 200, 255, 0.85)' : 'rgba(255, 190, 110, 0.85)',
+    });
+  }
+
   // --- 생존 점수 + 연출 ---
   if (F.t % 30 === 0) F.score++;
   if (F.inv > 0) F.inv--;
@@ -5574,6 +5675,17 @@ function drawFighter() {
   bg.addColorStop(1, '#232a5c');
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, VH);
+  // 🌫️ 성운 구름 (은은한 색 안개, 느리게 흐름)
+  for (const nb of (F ? F.nebulas : [])) {
+    const nyp = ((nb.y + F.t * nb.sp) % (VH + nb.r * 2)) - nb.r;
+    const ng = ctx.createRadialGradient(nb.x, nyp, 4, nb.x, nyp, nb.r);
+    ng.addColorStop(0, `hsla(${nb.hue}, 70%, 60%, 0.13)`);
+    ng.addColorStop(1, `hsla(${nb.hue}, 70%, 60%, 0)`);
+    ctx.fillStyle = ng;
+    ctx.beginPath();
+    ctx.arc(nb.x, nyp, nb.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
   for (const s of (F ? F.stars : [])) {
     const syp = (s.y + F.t * s.sp) % (VH + 20) - 10;
     ctx.globalAlpha = s.sp > 2 ? 0.9 : 0.5;
@@ -5612,8 +5724,10 @@ function drawFighter() {
 
   // 적들
   for (const e of F.enemies) {
+    if (e.flash > 0) e.flash--;
     ctx.save();
     ctx.translate(e.x, e.y);
+    if (e.flash > 0) ctx.filter = 'brightness(2.2)'; // 피격 플래시
     if (e.kind === 'pod') {
       ctx.fillStyle = '#a06bc4';
       ctx.strokeStyle = '#6c3483';
@@ -5684,6 +5798,7 @@ function drawFighter() {
       ctx.arc(6, 5, 2.4, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.filter = 'none';
     ctx.restore();
   }
 
@@ -6059,7 +6174,14 @@ function updateRunner() {
   R.vw = canvas.width / (canvas.height / R_VH); // 가로 논리 폭 (기기별)
   if (cheatGod && R.inv < 30) R.inv = 30; // 🛠️ 운영자 무적
   const spd = runnerSpeed();
+  const preM = Math.floor(R.dist / 500);
   R.dist += spd / 9; // 미터 환산
+  if (Math.floor(R.dist / 500) > preM && R.dist < RUN2_GOAL - 150) { // 📍 500m 이정표
+    const mMark = Math.floor(R.dist / 500) * 500;
+    addFloat(`📍 ${mMark.toLocaleString()}m!`, R.vw / 2, 120, '#ffd832', 22, true, 80);
+    beep(760, 0.1, 'square', 0.12);
+    setTimeout(() => beep(1010, 0.14, 'square', 0.12), 120);
+  }
 
   // 첫 안내
   if (!R.hinted) {
@@ -6352,6 +6474,46 @@ function drawRunner() {
     ctx.fill();
   }
   ctx.globalAlpha = 1;
+  // 🌌 은하 소용돌이 (왼쪽 위, 아주 천천히 회전)
+  ctx.save();
+  ctx.translate(90, 66);
+  ctx.rotate(R ? R.dist * 0.0004 : 0);
+  ctx.globalAlpha = 0.5;
+  for (let ga = 0; ga < 3; ga++) {
+    ctx.rotate((Math.PI * 2) / 3);
+    const gg4 = ctx.createRadialGradient(16, 0, 2, 16, 0, 30);
+    gg4.addColorStop(0, 'rgba(190, 160, 255, 0.55)');
+    gg4.addColorStop(1, 'rgba(190, 160, 255, 0)');
+    ctx.fillStyle = gg4;
+    ctx.beginPath();
+    ctx.ellipse(16, 0, 28, 9, 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#f2e8ff';
+  ctx.beginPath();
+  ctx.arc(0, 0, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  // 🪐 고리 행성 (중앙 상단, 느린 패럴랙스)
+  ctx.save();
+  const plx = (RVW * 0.62 - (R ? R.dist * 0.5 : 0) % (RVW + 200));
+  ctx.translate(((plx % (RVW + 200)) + RVW + 200) % (RVW + 200) - 100, 110);
+  ctx.fillStyle = '#d9905f';
+  ctx.beginPath();
+  ctx.arc(0, 0, 16, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255, 220, 170, 0.5)';
+  ctx.beginPath();
+  ctx.ellipse(-4, -4, 6, 4, 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(240, 200, 150, 0.85)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.ellipse(0, 2, 27, 7, -0.25, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
   // 지구 (오른쪽 위)
   ctx.save();
   ctx.translate(RVW - 64, 78);
@@ -6411,6 +6573,16 @@ function drawRunner() {
   ctx.fillStyle = gg2;
   ctx.fillRect(0, R_GROUND, RVW, VH - R_GROUND);
   if (R) {
+    // 지면 질감: 모래 알갱이 + 가로 줄무늬
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
+    for (let gi = 0; gi < 26; gi++) {
+      const gx = ((gi * 61 - R.dist * 9.5) % (RVW + 30) + RVW + 30) % (RVW + 30) - 15;
+      const gy = R_GROUND + 8 + ((gi * 37) % (VH - R_GROUND - 14));
+      ctx.fillRect(gx, gy, 2.2, 2.2);
+    }
+    ctx.fillStyle = 'rgba(70, 74, 88, 0.12)';
+    ctx.fillRect(0, R_GROUND + 18, RVW, 2);
+    ctx.fillRect(0, R_GROUND + 40, RVW, 2.5);
     // 크레이터
     for (const cr of R.craters) {
       ctx.fillStyle = 'rgba(90, 95, 108, 0.55)';
@@ -6729,6 +6901,18 @@ function drawRunner() {
       ctx.beginPath();
       ctx.ellipse(rg.x, rg.y, rg.r, rg.r * 0.45, 0, 0, Math.PI * 2);
       ctx.stroke();
+      ctx.restore();
+    }
+
+    // 플레이어 그림자 (점프 높이에 따라 작아지고 옅어짐)
+    if (!runnerOverGap() && R.py < R_VH) {
+      const air = clamp((R_GROUND - R.py) / 160, 0, 1);
+      ctx.save();
+      ctx.globalAlpha = 0.22 * (1 - air * 0.7);
+      ctx.fillStyle = '#111726';
+      ctx.beginPath();
+      ctx.ellipse(R_PX, R_GROUND + 5, 20 * (1 - air * 0.45), 5 * (1 - air * 0.4), 0, 0, Math.PI * 2);
+      ctx.fill();
       ctx.restore();
     }
 
@@ -7139,7 +7323,7 @@ $('mp-reset').addEventListener('click', () => {
 });
 
 // ---------- 버전 표시 & 최신 버전 유도 ----------
-const GAME_VERSION = 64; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
+const GAME_VERSION = 65; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
 const verLabel = $('version-label');
 function setVerLabel(txt, cls) {
   if (!verLabel) return;
