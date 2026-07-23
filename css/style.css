@@ -529,3 +529,27 @@ html, body {
 
 .char-img { width: 58px; height: 58px; flex-shrink: 0; image-rendering: auto; }
 .char-cur { outline: 3px solid #27ae60; }
+
+/* ---------- 발사 버튼 ---------- */
+.fire-btn {
+  position: absolute;
+  bottom: max(18px, env(safe-area-inset-bottom));
+  right: 14px;
+  z-index: 5;
+  width: 64px;
+  height: 64px;
+  border: none;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #ff8a5c, #e2574c);
+  box-shadow: 0 4px 0 #b03a30, 0 2px 10px rgba(0, 0, 0, 0.25);
+  font-size: 26px;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+.fire-btn:active {
+  transform: translateY(3px) scale(0.96);
+  box-shadow: 0 1px 0 #b03a30;
+}

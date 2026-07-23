@@ -640,6 +640,7 @@ let coinFrac;          // 펭귄: 코인 +10% 누적분
 let closeStreak;       // 아슬아슬 연속 횟수
 let closeRewarded;     // 간발의 승부사 보상 (판당 1회)
 let boss;              // 미니보스
+let standPlat;         // 보스전: 서 있는 발판 (점프 정지)
 let bossShots;         // 보스 투사체
 let nextBossAt;        // 다음 보스 등장 점수
 let seasonParts = [];  // 시즌 파티클 (꽃잎/낙엽)
@@ -689,18 +690,10 @@ canvas.addEventListener('touchstart', (e) => {
     shoot();
     return;
   }
-  if (controlMode === 'tilt') {
-    shoot();
-    return;
-  }
+  if (controlMode === 'tilt') return; // 기울이기 모드: 발사는 🔫 버튼으로
   const rect = canvas.getBoundingClientRect();
   const t = e.changedTouches[0];
   const x = t.clientX - rect.left;
-  const y = t.clientY - rect.top;
-  if (y < rect.height * 0.25) {
-    shoot();
-    return;
-  }
   touchSide = x < rect.width / 2 ? 'left' : 'right';
   input.left = touchSide === 'left';
   input.right = touchSide === 'right';
@@ -799,6 +792,7 @@ function newGame() {
   boss = null;
   bossShots = [];
   nextBossAt = 5000;
+  standPlat = null;
 
   // 들고 들어가는 아이템: 생명은 보유분 그대로, 로켓/자석은 있으면 1개 자동 사용
   lives = inv.life;
@@ -938,6 +932,10 @@ function shoot() {
 function endBossArena() {
   boss = null;
   bossShots = [];
+  if (standPlat) {
+    standPlat = null;
+    player.vy = jumpV(); // 전투 종료 → 다시 통통!
+  }
   for (const p of platforms) {
     if (p.arena) addBurst(p.x + p.w / 2, p.y, '#f6e58d');
   }
@@ -1051,14 +1049,25 @@ function update() {
   if (player.x < -player.w / 2) player.x = W + player.w / 2;
   if (player.x > W + player.w / 2) player.x = -player.w / 2;
 
+  // --- 보스전 서기: 발판 위에 고정, 가장자리 벗어나면 낙하 ---
+  if (standPlat) {
+    if (!boss || standPlat.broken ||
+        player.x < standPlat.x - 8 || player.x > standPlat.x + standPlat.w + 8) {
+      standPlat = null; // 발판을 벗어남 → 자유낙하
+    } else {
+      player.y = standPlat.y - player.h / 2;
+      player.vy = 0;
+    }
+  }
+
   // --- 중력/제트팩 (우주에선 무중력에 가깝게 둥실둥실) ---
   const gravity = score > 13500 ? GRAVITY * 0.55 : GRAVITY;
   if (score > 13500 && !spaceAnnounced) {
     spaceAnnounced = true;
     addFloat('🌌 무중력 구간! 둥실둥실~', W / 2, 190, '#dfe6e9', 17, true);
   }
-  if (holdCannon) {
-    // 대포 안: 중력 없음
+  if (holdCannon || standPlat) {
+    // 대포 안/보스전 서기: 중력 없음
   } else if (jetpackTimer > 0) {
     jetpackTimer--;
     player.vy = JETPACK_VY;
@@ -1071,10 +1080,10 @@ function update() {
   } else {
     player.vy += gravity;
   }
-  if (!holdCannon) player.y += player.vy;
+  if (!holdCannon && !standPlat) player.y += player.vy;
 
   // --- 발판 충돌 (하강 중일 때만) ---
-  if (player.vy > 0 && jetpackTimer <= 0) {
+  if (player.vy > 0 && jetpackTimer <= 0 && !standPlat) {
     for (const p of platforms) {
       if (p.broken) continue;
       const px = player.x, pb = player.y + player.h / 2;
@@ -1087,6 +1096,15 @@ function update() {
           continue; // 튕기지 않고 통과
         }
         player.y = p.y - player.h / 2;
+        // 보스전: 튕기지 않고 발판 위에 선다 — 회피와 공격에 집중!
+        if (boss) {
+          standPlat = p;
+          player.vy = 0;
+          const freshB = !landedSet.has(p);
+          landedSet.add(p);
+          missionEvent('Land', p, { fresh: freshB, spring: false });
+          break;
+        }
         const usedSpring = !p.jetpack && p.spring;
         if (p.jetpack) {
           p.jetpack = false;
@@ -1384,7 +1402,7 @@ function update() {
     mkArena(123, cameraY + 335, 114);
     monsters = []; // 아레나에선 보스에게 집중
     bossShots = [];
-    addFloat('👹 보스 등장! 발판을 오가며 피하세요!', W / 2, 190, '#c0392b', 17, true);
+    addFloat('👹 보스전! 좌우로 피하고 🔫 버튼으로 공격!', W / 2, 190, '#c0392b', 16, true);
     beep(70, 0.6, 'sawtooth', 0.22);
     vib(100);
   }
@@ -1582,9 +1600,26 @@ function update() {
     flashSub = `${a.name} (+${a.reward}🪙)`;
   }
 
-  // --- 낙사 ---
+  // --- 낙사 (보스전에는 죽지 않고 바닥 발판으로 복귀) ---
   if (player.y > cameraY + H + player.h) {
-    tryRevive();
+    if (boss) {
+      const floor = platforms.filter((p) => p.arena)
+        .sort((a, b) => b.y - a.y)
+        .find((p) => true);
+      if (floor) {
+        player.x = floor.x + floor.w / 2;
+        player.y = floor.y - player.h / 2;
+        player.vy = 0;
+        standPlat = floor;
+        invincible = Math.max(invincible, 60);
+        addFloat('휴~ 다시 올라왔다!', player.x, player.y - 40, '#57606f', 14);
+        sfx.revive();
+      } else {
+        tryRevive();
+      }
+    } else {
+      tryRevive();
+    }
   }
 }
 
@@ -3008,6 +3043,15 @@ const pauseScreen = $('pause-screen');
 const shopScreen = $('shop-screen');
 const helpScreen = $('help-screen');
 const pauseBtn = $('btn-pause');
+const fireBtn = $('btn-fire');
+fireBtn.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  if (state === State.PLAYING) shoot();
+}, { passive: false });
+fireBtn.addEventListener('mousedown', (e) => {
+  e.preventDefault();
+  if (state === State.PLAYING) shoot();
+});
 
 function refreshMenu() {
   $('best-score-label').textContent = best > 0 ? `최고 기록 ${best}` : '';
@@ -3019,8 +3063,8 @@ function refreshControlUI() {
   $('ctrl-touch').classList.toggle('active', controlMode === 'touch');
   $('ctrl-tilt').classList.toggle('active', controlMode === 'tilt');
   $('control-desc').innerHTML = controlMode === 'touch'
-    ? '화면 좌/우 터치(또는 ← → 방향키)로 이동<br>화면 위쪽 탭(또는 스페이스바)으로 발사'
-    : '핸드폰을 좌우로 기울여 이동<br>화면 아무 곳이나 탭하면 발사';
+    ? '화면 좌/우 터치(또는 ← → 방향키)로 이동<br>🔫 오른쪽 아래 버튼(또는 스페이스바)으로 발사'
+    : '핸드폰을 좌우로 기울여 이동<br>🔫 오른쪽 아래 버튼으로 발사';
 }
 
 function setControlMode(mode) {
@@ -3243,6 +3287,7 @@ function beginCountdown() {
   $('upg-screen').classList.add('hidden');
   $('char-screen').classList.add('hidden');
   pauseBtn.classList.remove('hidden');
+  fireBtn.classList.remove('hidden');
   photoMode = false;
   bgm.start();
   if (tut) addFloat('좌우로 움직여 발판을 밟아요!', W / 2, 190, '#2c3e50', 16, true);
@@ -3294,6 +3339,7 @@ function gameOver() {
   $('new-record').classList.toggle('hidden', !isRecord);
   overScreen.classList.remove('hidden');
   pauseBtn.classList.add('hidden');
+  fireBtn.classList.add('hidden');
   autoSubmitScore();
 }
 
@@ -3308,6 +3354,7 @@ function goHome() {
   $('upg-screen').classList.add('hidden');
   $('char-screen').classList.add('hidden');
   pauseBtn.classList.add('hidden');
+  fireBtn.classList.add('hidden');
   startScreen.classList.remove('hidden');
   refreshMenu();
 }
@@ -3378,6 +3425,7 @@ $('btn-photo').addEventListener('click', () => {
   photoMode = true;
   pauseScreen.classList.add('hidden');
   pauseBtn.classList.add('hidden');
+  fireBtn.classList.add('hidden');
 });
 canvas.addEventListener('mousedown', () => {
   if (photoMode) exitPhotoMode();
@@ -3386,6 +3434,7 @@ function exitPhotoMode() {
   photoMode = false;
   pauseScreen.classList.remove('hidden');
   pauseBtn.classList.remove('hidden');
+  fireBtn.classList.remove('hidden');
 }
 // 시작 화면 빈 곳을 탭하면 캐릭터가 멍멍! 하고 폴짝
 startScreen.addEventListener('click', (e) => {
