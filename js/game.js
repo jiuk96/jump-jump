@@ -5677,3 +5677,53 @@ document.addEventListener('visibilitychange', () => {
 newGame(); // 메뉴 뒤 배경용
 refreshMenu();
 loop();
+
+// ---------- 버전 표시 & 최신 버전 유도 ----------
+const GAME_VERSION = 49; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
+const verLabel = $('version-label');
+function setVerLabel(txt, cls) {
+  if (!verLabel) return;
+  verLabel.textContent = txt;
+  verLabel.className = 'version-label' + (cls ? ' ' + cls : '');
+}
+setVerLabel(`버전 v${GAME_VERSION} · 탭해서 업데이트 확인`);
+let verBusy = false;
+if (verLabel) {
+  verLabel.addEventListener('click', async () => {
+    if (verLabel.classList.contains('has-new')) { location.reload(); return; }
+    if (verBusy) return;
+    verBusy = true;
+    setVerLabel('🔄 최신 버전 확인 중...');
+    let found = false;
+    try {
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg) {
+          await reg.update();
+          await new Promise((r) => setTimeout(r, 2200));
+          found = !!(reg.waiting || reg.installing);
+        }
+      }
+    } catch (e) { /* 오프라인 등은 무시 */ }
+    if (found || !$('update-banner').classList.contains('hidden')) {
+      setVerLabel('🆕 새 버전 발견! 탭해서 적용', 'has-new');
+    } else {
+      setVerLabel(`✅ 최신 버전입니다 (v${GAME_VERSION})`);
+      setTimeout(() => {
+        if (!verLabel.classList.contains('has-new')) setVerLabel(`버전 v${GAME_VERSION} · 탭해서 업데이트 확인`);
+      }, 2600);
+    }
+    verBusy = false;
+  });
+}
+if ('serviceWorker' in navigator) {
+  // 새 버전이 감지되면 버전 라벨도 함께 강조
+  let verHadCtl = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!verHadCtl) { verHadCtl = true; return; }
+    setVerLabel('🆕 새 버전 발견! 탭해서 적용', 'has-new');
+  });
+  navigator.serviceWorker.getRegistration()
+    .then((reg) => { if (reg && reg.waiting) setVerLabel('🆕 새 버전 발견! 탭해서 적용', 'has-new'); })
+    .catch(() => {});
+}

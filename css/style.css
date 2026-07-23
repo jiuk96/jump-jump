@@ -1169,3 +1169,30 @@ html, body {
   color: #9aa0ad;
   margin-top: 1px;
 }
+
+/* ---------- 버전 라벨 (시작 화면) ---------- */
+.version-label {
+  display: block;
+  position: relative;
+  z-index: 6; /* 하단 dock보다 위 — 어떤 레이아웃에서도 탭 가능 */
+  margin: 10px auto 0;
+  padding: 5px 14px;
+  border: none;
+  border-radius: 14px;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #5a6474;
+  background: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+}
+.version-label.has-new {
+  color: #fff;
+  background: linear-gradient(135deg, #7d3fd4, #b04bd9);
+  box-shadow: 0 4px 12px rgba(120, 60, 200, 0.45);
+  animation: ver-pulse 1.2s ease-in-out infinite;
+}
+@keyframes ver-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
