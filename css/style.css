@@ -8,6 +8,13 @@
   touch-action: manipulation;
 }
 
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+}
+
 html, body {
   width: 100%;
   height: 100%;
@@ -43,6 +50,8 @@ html, body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  padding-top: var(--sat);
+  padding-bottom: var(--sab);
   gap: 16px;
   background: rgba(135, 206, 235, 0.92);
   backdrop-filter: blur(3px);
@@ -533,8 +542,8 @@ html, body {
 /* ---------- 발사 버튼 ---------- */
 .fire-btn {
   position: absolute;
-  bottom: max(16px, env(safe-area-inset-bottom));
-  right: 12px;
+  bottom: max(16px, var(--sab));
+  right: max(12px, var(--sar));
   z-index: 5;
   width: 88px;
   height: 88px;
@@ -577,6 +586,7 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding-top: calc(var(--sat) + 8px);
   gap: 12px;
   padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
   background: linear-gradient(135deg, #6c3fb5, #8e44ad);
@@ -1214,8 +1224,8 @@ html, body {
 /* ---------- ◀ ▶ 이동 버튼 (터치 모드) ---------- */
 .move-btns {
   position: absolute;
-  bottom: max(16px, env(safe-area-inset-bottom));
-  left: 12px;
+  bottom: max(16px, var(--sab));
+  left: max(12px, var(--sal));
   z-index: 5;
   display: flex;
   gap: 10px;
@@ -1380,9 +1390,9 @@ html, body {
 /* ---------- 🏃 문 런 점프/슬라이드 버튼 ---------- */
 .run-btns {
   position: absolute;
-  bottom: max(16px, env(safe-area-inset-bottom));
-  left: 12px;
-  right: 12px;
+  bottom: max(16px, var(--sab));
+  left: max(12px, var(--sal));
+  right: max(12px, var(--sar));
   z-index: 5;
   display: flex;
   justify-content: space-between;
@@ -1454,3 +1464,17 @@ html, body {
   max-width: none;
   aspect-ratio: auto;
 }
+
+
+/* ---------- 작은 화면 대응 (iPhone SE 등 낮은 해상도) ---------- */
+@media (max-height: 700px) {
+  .lobby-title { font-size: clamp(30px, 9vw, 40px); }
+  .plate-grid { gap: 7px; }
+  .plate { padding: 9px 6px; }
+  .btn-run3 { padding: 6px 14px; }
+  .btn-run3 small { display: inline; margin-left: 4px; }
+  .series-count { margin: 2px 0 0; }
+  .version-label { margin-top: 6px; }
+  .dock-btn { transform: scale(0.9); }
+}
+/* 아주 큰 화면(태블릿): 컨테이너 최대 폭 제한 유지 + 중앙 정렬은 기본 CSS가 처리 */

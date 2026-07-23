@@ -55,6 +55,12 @@ const PlatType = {
   ICE: 'ice',           // 하늘색: 밟으면 잠시 미끄러움 (눈 올 때 자주)
 };
 
+// 노치(안전 영역) 상단 높이 → 논리 px (기기별 UI 보정)
+function safeTopL() {
+  const st = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sat')) || 0;
+  return st * (W / (canvas.clientWidth || W));
+}
+
 // ---------- 유틸 ----------
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -4416,8 +4422,10 @@ function draw() {
     ctx.fillText('준비하세요!', W / 2, H / 2 + 40);
   }
 
-  // HUD: 점수 / 코인 / 별 / 생명 (사진 모드에선 숨김)
+  // HUD: 점수 / 코인 / 별 / 생명 (사진 모드에선 숨김) — 노치만큼 아래로
   if (!photoMode && (state === State.PLAYING || state === State.PAUSED || state === State.COUNTDOWN)) {
+    ctx.save();
+    ctx.translate(0, safeTopL());
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
     roundRect(8, 8, 110, 34, 17);
     roundRect(8, 48, 86, 28, 14);
@@ -4480,6 +4488,7 @@ function draw() {
       ctx.fillText('❤️'.repeat(lives), 10, mission ? 130 : 92);
     }
 
+    ctx.restore();
     // 미션 성공 배너
     if (missionFlash > 0) {
       const t = missionFlash / 140; // 1 → 0
@@ -4668,13 +4677,13 @@ function refreshMenu() {
   $('wallet-label').textContent = wallet.toLocaleString();
   const rb = $('btn-run2');
   if (rb) {
-    rb.textContent = stats.moon
+    rb.textContent = series2Unlocked()
       ? `2️⃣ 시리즈2 · 문 런${best2 > 0 ? ` (BEST ${best2}m)` : ''}`
       : '🔒 시리즈2 · 문 런';
-    rb.classList.toggle('locked', !stats.moon);
+    rb.classList.toggle('locked', !series2Unlocked());
   }
   const sc2 = $('series-count');
-  if (sc2) sc2.textContent = `🎮 시리즈 ${stats.moon ? 2 : 1} / 3 해금`;
+  if (sc2) sc2.textContent = `🎮 시리즈 ${series2Unlocked() ? 2 : 1} / 3 해금`;
   const ob = $('op-badge');
   if (ob) ob.classList.toggle('hidden', !opMode);
   $('title-sub').textContent = title ? `🎖️ ${title}` : '하늘 끝까지 올라가 보세요';
@@ -5131,6 +5140,7 @@ function resumeGame() {
 
 function gameOver() {
   if (state !== State.PLAYING && state !== State.RPS && state !== State.ENDING) return;
+  const run2Before = series2Unlocked(); // best 갱신 전에 판정
   state = State.OVER;
   vib(160);
   bgm.stop();
@@ -5148,6 +5158,7 @@ function gameOver() {
   if (dailyMode) stats.dailyRuns = (stats.dailyRuns || 0) + 1;
   stats.totalScore += score;
   if (score > stats.bestScore) stats.bestScore = score;
+  const run2Now = !run2Before && series2Unlocked(); // 이번 판으로 시리즈2 해금!
   if (score >= 14000) stats.space = true;
   saveStats();
   checkAchievements();
@@ -5157,7 +5168,8 @@ function gameOver() {
   $('final-best').textContent = `최고 기록 ${best}`;
   $('final-stats').textContent =
     `🔥 최고 콤보 x${runMaxCombo} · 👾 처치 ${runKills}` +
-    (runBosses ? ` · 👹 보스 ${runBosses}` : '') + ` · ⭐ 별 ${runStars}`;
+    (runBosses ? ` · 👹 보스 ${runBosses}` : '') + ` · ⭐ 별 ${runStars}` +
+    (run2Now ? ' · 🌕 시리즈2 문 런 해금!' : '');
   $('new-record').classList.toggle('hidden', !isRecord);
   overScreen.classList.remove('hidden');
   pauseBtn.classList.add('hidden');
@@ -5202,6 +5214,12 @@ let best2 = parseInt(localStorage.getItem('jump-best2') || '0', 10);
 const R_VH = 360;       // 러너 논리 높이 (가로 화면 기준)
 const R_GROUND = 296;   // 지면 y (발 위치)
 const R_PX = 110;       // 플레이어 고정 x
+
+// 시리즈2 해금: 시리즈1에서 10,000점 달성 (또는 달 착륙)
+const RUN2_UNLOCK = 10000;
+function series2Unlocked() {
+  return stats.bestScore >= RUN2_UNLOCK || best >= RUN2_UNLOCK || stats.moon;
+}
 
 // 문 런 가로 화면: 뷰포트가 세로면 CSS로 90° 회전 (폰을 돌려서 플레이)
 function updateRunnerOrientation() {
@@ -5963,9 +5981,9 @@ function drawRunner() {
 
 $('btn-start').addEventListener('click', () => { runnerMode = false; dailyMode = false; startGame(); });
 $('btn-run2').addEventListener('click', () => {
-  if (!stats.moon) { // 시리즈1 엔딩 클리어 시 해금
+  if (!series2Unlocked()) { // 시리즈1 10,000점 달성 시 해금
     const b = $('btn-run2');
-    b.textContent = '🔒 60,000점 달 착륙 클리어 시 해금!';
+    b.textContent = '🔒 시리즈1에서 10,000점 달성 시 해금!';
     setTimeout(() => refreshMenu(), 1600);
     beep(200, 0.1, 'square', 0.1);
     return;
@@ -6270,7 +6288,7 @@ $('mp-reset').addEventListener('click', () => {
 });
 
 // ---------- 버전 표시 & 최신 버전 유도 ----------
-const GAME_VERSION = 60; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
+const GAME_VERSION = 61; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
 const verLabel = $('version-label');
 function setVerLabel(txt, cls) {
   if (!verLabel) return;
