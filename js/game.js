@@ -269,7 +269,7 @@ function saveInv() { localStorage.setItem('jump-inv', JSON.stringify(inv)); }
 let stats = {
   runs: 0, totalScore: 0, bestScore: 0, coins: 0, kills: 0,
   missions: 0, stars: 0, maxCombo: 0, revives: 0, space: false, dailyRuns: 0,
-  runnerBest: 0, runnerRuns: 0,
+  runnerBest: 0, runnerRuns: 0, run2Clear: false, fighterBest: 0, fighterRuns: 0,
 };
 try { stats = Object.assign(stats, JSON.parse(localStorage.getItem('jump-stats') || '{}')); } catch (e) {}
 let unlockedAch = new Set();
@@ -322,6 +322,9 @@ const ACHIEVEMENTS = [
   { id: 'fashion12', name: '스타일 아이콘', desc: '꾸미기 아이템 12개 보유', target: 12, get: () => COSMETICS.filter((k) => inv[k]).length, reward: 600 },
   { id: 'run500', name: '문 러너 입문', desc: '시리즈2 문 런에서 500m 달리기', target: 500, get: (s) => Math.floor(s.runnerBest || 0), reward: 200 },
   { id: 'run2000', name: '달 위의 폭주족', desc: '시리즈2 문 런에서 2,000m 달리기', target: 2000, get: (s) => Math.floor(s.runnerBest || 0), reward: 500 },
+  { id: 'run2clear', name: '우주선 탑승', desc: '문 런 3,000m 지점의 우주선에 탑승 (시리즈2 클리어)', target: 1, get: (s) => (s.run2Clear ? 1 : 0), reward: 400 },
+  { id: 'fighter2k', name: '에이스 파일럿', desc: '시리즈3 스타 파이터 2,000점', target: 2000, get: (s) => s.fighterBest || 0, reward: 300 },
+  { id: 'fighter5k', name: '은하 수호자', desc: '시리즈3 스타 파이터 5,000점', target: 5000, get: (s) => s.fighterBest || 0, reward: 600 },
 ];
 
 const achToast = []; // 달성 알림 대기열
@@ -383,8 +386,8 @@ async function submitScore(name, sc, modeStr) {
   try {
     let res = await post({ name, score: sc, mode, charid: curChar });
     if (!res.ok) res = await post({ name, score: sc, mode }); // charid 컬럼 폴백
-    // 문 런 기록은 mode 없이 올리면 시리즈1 랭킹을 오염시키므로 여기서 중단
-    if (!res.ok && mode !== 'runner') res = await post({ name, score: sc });
+    // 문 런·파이터 기록은 mode 없이 올리면 시리즈1 랭킹을 오염시키므로 여기서 중단
+    if (!res.ok && mode !== 'runner' && mode !== 'fighter') res = await post({ name, score: sc });
     return res.ok;
   } catch (e) {
     return false;
@@ -547,8 +550,9 @@ async function fetchScores(tab, series = 1) {
   }
   // 시리즈별 분리: 2 = 문 런(runner), 1 = 하늘 점프(normal·daily)
   const modeFilter = series === 2 ? '&mode=eq.runner'
+    : series === 3 ? '&mode=eq.fighter'
     : tab === 'day' ? '&mode=eq.daily'
-    : '&mode=neq.runner';
+    : '&mode=in.(normal,daily)';
   const get = (cols, mf) =>
     fetch(`${SUPA_URL}/rest/v1/scores?select=${cols}&order=score.desc&limit=300${mf}${dateFilter}`, { headers: supaHeaders });
   let res = await get('name,score,created_at,charid', modeFilter);
@@ -597,14 +601,15 @@ let lbSeries = 1; // 1 = 하늘 점프, 2 = 문 런
 async function renderLeaderboard() {
   const list = $('lb-list');
   const fmt = (s) => lbSeries === 2 ? `${s.toLocaleString()}m` : s.toLocaleString();
-  if (lbSeries === 2 && lbTab === 'day') lbTab = 'all'; // 문 런엔 데일리 없음
+  if (lbSeries !== 1 && lbTab === 'day') lbTab = 'all'; // 데일리는 시리즈1 전용
   $('lb-ser-1').classList.toggle('active', lbSeries === 1);
   $('lb-ser-2').classList.toggle('active', lbSeries === 2);
-  $('lb-tab-day').classList.toggle('hidden', lbSeries === 2);
+  $('lb-ser-3').classList.toggle('active', lbSeries === 3);
+  $('lb-tab-day').classList.toggle('hidden', lbSeries !== 1);
   $('lb-tab-all').classList.toggle('active', lbTab === 'all');
   $('lb-tab-week').classList.toggle('active', lbTab === 'week');
   $('lb-tab-day').classList.toggle('active', lbTab === 'day');
-  const myBest = lbSeries === 2 ? `${best2.toLocaleString()}m` : `${best.toLocaleString()}점`;
+  const myBest = lbSeries === 2 ? `${best2.toLocaleString()}m` : lbSeries === 3 ? `${best3.toLocaleString()}점` : `${best.toLocaleString()}점`;
   $('lb-my').textContent = myName ? `내 닉네임: ${myName} · 최고 ${myBest}` : '게임오버 화면에서 닉네임을 만들면 랭킹에 올라갑니다';
   list.innerHTML = '<div class="lb-info">불러오는 중...</div>';
   const mySeries = lbSeries; // 렌더 도중 탭 전환 대비
@@ -613,7 +618,9 @@ async function renderLeaderboard() {
     if (mySeries !== lbSeries) return; // 이미 다른 시리즈로 넘어감
     if (!rows.length) {
       list.innerHTML = lbSeries === 2
-        ? '<div class="lb-info">아직 문 런 기록이 없어요.<br>시리즈2를 클리어하고 첫 주인공이 되어보세요!</div>'
+        ? '<div class="lb-info">아직 문 런 기록이 없어요.<br>첫 주인공이 되어보세요!</div>'
+        : lbSeries === 3
+        ? '<div class="lb-info">아직 스타 파이터 기록이 없어요.<br>첫 주인공이 되어보세요!</div>'
         : '<div class="lb-info">아직 기록이 없어요. 첫 주인공이 되어보세요!</div>';
       return;
     }
@@ -1181,6 +1188,11 @@ canvas.addEventListener('touchstart', (e) => {
   e.preventDefault();
   if (photoMode) { exitPhotoMode(); return; }
   if (state !== State.PLAYING) return;
+  if (fighterMode && F) { // 스타 파이터: 터치한 x를 향해 이동
+    const rectF = canvas.getBoundingClientRect();
+    F.tx = clamp(((e.changedTouches[0].clientX - rectF.left) / rectF.width) * W, 20, W - 20);
+    return;
+  }
   if (runnerMode) { // 문 런: (가로 기준) 왼쪽 탭 = 슬라이드, 오른쪽 탭 = 점프
     const rect0 = canvas.getBoundingClientRect();
     const t0 = e.changedTouches[0];
@@ -1204,6 +1216,12 @@ canvas.addEventListener('touchstart', (e) => {
   touchSide = x < rect.width / 2 ? 'left' : 'right';
   input.left = touchSide === 'left';
   input.right = touchSide === 'right';
+}, { passive: false });
+canvas.addEventListener('touchmove', (e) => {
+  if (!fighterMode || !F || state !== State.PLAYING) return;
+  e.preventDefault();
+  const rectF = canvas.getBoundingClientRect();
+  F.tx = clamp(((e.changedTouches[0].clientX - rectF.left) / rectF.width) * W, 20, W - 20);
 }, { passive: false });
 canvas.addEventListener('touchend', (e) => {
   e.preventDefault();
@@ -4580,7 +4598,7 @@ function loop(now) {
     physicsAcc += dt;
     let steps = 0;
     while (physicsAcc >= PHYSICS_STEP && steps < 5) { // 한 번에 최대 5스텝 (렉 스파이럴 방지)
-      if (runnerMode) updateRunner(); else update();
+      if (runnerMode) updateRunner(); else if (fighterMode) updateFighter(); else update();
       physicsAcc -= PHYSICS_STEP;
       steps++;
       if (state !== State.PLAYING) break; // 게임오버 등 상태 변화 시 중단
@@ -4607,7 +4625,7 @@ function loop(now) {
       }
     }
   }
-  if (runnerMode) drawRunner(); else draw();
+  if (runnerMode) drawRunner(); else if (fighterMode) drawFighter(); else draw();
   rafId = requestAnimationFrame(loop);
 }
 
@@ -4682,8 +4700,20 @@ function refreshMenu() {
       : '🔒 시리즈2 · 문 런';
     rb.classList.toggle('locked', !series2Unlocked());
   }
+  const rb3 = $('btn-run3');
+  if (rb3) {
+    if (series3Unlocked()) {
+      rb3.disabled = false;
+      rb3.classList.add('unlocked');
+      rb3.innerHTML = `3️⃣ 시리즈3 · 스타 파이터${best3 > 0 ? ` (BEST ${best3.toLocaleString()})` : ''}`;
+    } else {
+      rb3.disabled = false; // 잠금 안내 클릭은 가능
+      rb3.classList.remove('unlocked');
+      rb3.innerHTML = '🔒 시리즈3 · 스타 파이터<small>문 런 우주선 탑승 시 해금</small>';
+    }
+  }
   const sc2 = $('series-count');
-  if (sc2) sc2.textContent = `🎮 시리즈 ${series2Unlocked() ? 2 : 1} / 3 해금`;
+  if (sc2) sc2.textContent = `🎮 시리즈 ${1 + (series2Unlocked() ? 1 : 0) + (series3Unlocked() ? 1 : 0)} / 3 해금`;
   const ob = $('op-badge');
   if (ob) ob.classList.toggle('hidden', !opMode);
   $('title-sub').textContent = title ? `🎖️ ${title}` : '하늘 끝까지 올라가 보세요';
@@ -5181,7 +5211,9 @@ function gameOver() {
 
 function goHome() {
   runnerMode = false;
+  fighterMode = false;
   R = null;
+  F = null;
   $('run-btns').classList.add('hidden');
   updateRunnerOrientation(); // 세로 복귀
   state = State.MENU;
@@ -5206,6 +5238,677 @@ function goHome() {
 }
 
 
+
+// ==================== 시리즈 3: 스타 파이터 (1942식 종스크롤 슈팅) ====================
+// 문 런에서 탑승한 우주선으로 출격! 좌우로 움직이며 자동 발사로 적을 격추한다.
+let fighterMode = false;
+let F = null;
+let best3 = parseInt(localStorage.getItem('jump-best3') || '0', 10);
+
+function startFighter() {
+  fighterMode = true;
+  runnerMode = false;
+  dailyMode = false;
+  state = State.COUNTDOWN;
+  initFighter();
+  countdownUntil = performance.now() + 3000;
+  startScreen.classList.add('hidden');
+  overScreen.classList.add('hidden');
+  pauseScreen.classList.add('hidden');
+  shopScreen.classList.add('hidden');
+  helpScreen.classList.add('hidden');
+  $('ach-screen').classList.add('hidden');
+  $('upg-screen').classList.add('hidden');
+  $('char-screen').classList.add('hidden');
+  pauseBtn.classList.remove('hidden');
+  fireBtn.classList.add('hidden');
+  $('run-btns').classList.add('hidden');
+  showMoveBtns(true); // ◀ ▶ 버튼으로도 조종
+  updateRunnerOrientation();
+  photoMode = false;
+  bgm.start();
+}
+
+function initFighter() {
+  cameraY = 0;
+  frame = 0;
+  shakeT = 0;
+  floatTexts = [];
+  particles = [];
+  msgQueue = [];
+  curMsg = null;
+  F = {
+    x: W / 2, tx: W / 2, vh: 640,
+    hearts: 3, inv: 0, score: 0, coins: 0,
+    fireT: 0, spawnT: 60, t: 0,
+    bullets: [], ebullets: [], enemies: [], drops: [], booms: [],
+    pow: { double: 0, spread: 0, shield: 0 },
+    boss: null, nextBoss: 800, bossN: 0, hinted: false,
+    stars: Array.from({ length: 70 }, () => ({
+      x: Math.random() * W, y: Math.random() * 800,
+      r: Math.random() * 1.5 + 0.5, sp: Math.random() < 0.5 ? 1.6 : 3.2,
+    })),
+  };
+}
+
+function fighterShipY() { return F.vh - 130; }
+
+function fighterHit() {
+  if (F.inv > 0) return;
+  if (F.pow.shield > 0) { // 실드가 대신 맞음
+    F.pow.shield--;
+    F.inv = 60;
+    addBurst(F.x, fighterShipY(), '#74b9ff');
+    beep(900, 0.12, 'triangle', 0.14);
+    return;
+  }
+  F.hearts--;
+  F.inv = 100;
+  shakeT = 12;
+  sfx.hit();
+  vib(90);
+  addBurst(F.x, fighterShipY(), '#e74c3c');
+  if (F.hearts <= 0) {
+    F.booms.push({ x: F.x, y: fighterShipY(), r: 4, life: 26 });
+    fighterOver();
+  }
+}
+
+function fighterOver() {
+  state = State.OVER;
+  bgm.stop();
+  vib(160);
+  const sc = F.score;
+  const isRecord = sc > best3;
+  if (isRecord) {
+    best3 = sc;
+    localStorage.setItem('jump-best3', String(best3));
+  }
+  stats.fighterRuns = (stats.fighterRuns || 0) + 1;
+  if (sc > (stats.fighterBest || 0)) stats.fighterBest = sc;
+  saveStats();
+  checkAchievements();
+  $('gameover-title').textContent = '🛸 스타 파이터 종료!';
+  $('final-score').textContent = String(sc);
+  $('final-coins').textContent = String(F.coins);
+  $('final-best').textContent = `최고 기록 ${best3}`;
+  $('final-stats').textContent = `🛸 격추 점수 ${sc} · 🪙 ${F.coins}개 · 👹 보스 ${F.bossN}`;
+  $('new-record').classList.toggle('hidden', !isRecord);
+  overScreen.classList.remove('hidden');
+  pauseBtn.classList.add('hidden');
+  showMoveBtns(false);
+  autoSubmitScore(sc, 'fighter');
+  cloudSync(false);
+}
+
+function fighterSpawnEnemy(kind, x, extra = {}) {
+  const d = Math.min(1, F.score / 3000);
+  const base = {
+    pod: { hp: 1, vy: 2.1 + d * 1.4, w: 26, h: 22, pts: 10 },
+    ufo: { hp: 2, vy: 1.7 + d, w: 30, h: 20, pts: 15 },
+    shooter: { hp: 3, vy: 1.1 + d * 0.6, w: 30, h: 26, pts: 20, shot: 70 },
+    rock: { hp: 4, vy: 1.5 + d * 0.8, w: 36, h: 34, pts: 25 },
+  }[kind];
+  F.enemies.push(Object.assign({ kind, x, y: -30, ph: rand(0, 6), sway: rand(0.8, 1.6) }, base, extra));
+}
+
+function updateFighter() {
+  frame++;
+  F.t++;
+  F.vh = canvas.height / scale;
+  if (cheatGod && F.inv < 30) F.inv = 30;
+  const d = Math.min(1, F.score / 3000);
+  const sy = fighterShipY();
+
+  if (!F.hinted) {
+    F.hinted = true;
+    announce('◀ ▶ 버튼이나 드래그로 조종 — 발사는 자동!', '#2c3e50', 220);
+  }
+
+  // --- 조종: 버튼/방향키/기울기 + 드래그 목표 ---
+  const dir = (input.left ? -1 : 0) + (input.right ? 1 : 0) + (controlMode === 'tilt' ? input.tilt : 0);
+  if (dir !== 0) {
+    F.x += dir * 5.2;
+    F.tx = F.x;
+  } else {
+    F.x += (F.tx - F.x) * 0.25; // 드래그 목표 추적
+  }
+  F.x = clamp(F.x, 20, W - 20);
+
+  // --- 자동 발사 ---
+  if (--F.fireT <= 0) {
+    F.fireT = F.pow.double > 0 ? 7 : 9;
+    const mk = (bx, vx = 0) => F.bullets.push({ x: bx, y: sy - 18, vy: -11, vx });
+    if (F.pow.double > 0) { mk(F.x - 7); mk(F.x + 7); }
+    else mk(F.x);
+    if (F.pow.spread > 0) { mk(F.x - 4, -2.2); mk(F.x + 4, 2.2); }
+    beep(1150, 0.03, 'square', 0.04);
+  }
+  for (const k of ['double', 'spread']) if (F.pow[k] > 0) F.pow[k]--;
+
+  // --- 적 스폰 (보스 중엔 정지) ---
+  if (!F.boss && --F.spawnT <= 0) {
+    F.spawnT = Math.round(rand(34, 60) * (1 - d * 0.45));
+    const roll = Math.random();
+    if (roll < 0.3) {
+      fighterSpawnEnemy('pod', rand(30, W - 30));
+    } else if (roll < 0.48 && d > 0.1) { // V자 편대
+      const cx = rand(80, W - 80);
+      for (let i = -2; i <= 2; i++) fighterSpawnEnemy('pod', cx + i * 34, { y: -30 - Math.abs(i) * 26 });
+      F.spawnT += 30;
+    } else if (roll < 0.66) {
+      fighterSpawnEnemy('ufo', rand(40, W - 40));
+    } else if (roll < 0.84 && d > 0.15) {
+      fighterSpawnEnemy('shooter', rand(40, W - 40));
+    } else {
+      fighterSpawnEnemy('rock', rand(40, W - 40));
+    }
+  }
+
+  // --- 보스 등장 ---
+  if (!F.boss && F.score >= F.nextBoss) {
+    F.bossN++;
+    F.boss = {
+      hp: 26 + F.bossN * 14, maxHp: 26 + F.bossN * 14,
+      x: W / 2, y: -60, vx: 1.6 + F.bossN * 0.3, shot: 70, ph: 0,
+    };
+    F.nextBoss += 1200 + F.bossN * 400;
+    announce(`👹 모선 출현! (${F.bossN}차)`, '#c0392b', 140);
+    beep(70, 0.5, 'sawtooth', 0.2);
+    vib([180, 70, 320]);
+    shakeT = 18;
+  }
+  if (F.boss) {
+    const b = F.boss;
+    if (b.y < 90) b.y += 1.6;
+    b.x += b.vx;
+    if (b.x < 60 || b.x > W - 60) b.vx *= -1;
+    if (--b.shot <= 0) {
+      b.shot = Math.max(42, 68 - F.bossN * 5);
+      b.ph = (b.ph + 1) % 3;
+      if (b.ph === 0) { // 조준탄
+        const a = Math.atan2(sy - b.y, F.x - b.x);
+        F.ebullets.push({ x: b.x, y: b.y + 24, vx: Math.cos(a) * 3.4, vy: Math.sin(a) * 3.4 });
+      } else if (b.ph === 1) { // 부채꼴
+        for (const vx of [-2.2, -1.1, 0, 1.1, 2.2]) F.ebullets.push({ x: b.x, y: b.y + 24, vx, vy: 3 });
+      } else { // 양옆 낙하
+        F.ebullets.push({ x: b.x - 40, y: b.y + 10, vx: 0, vy: 3.4 });
+        F.ebullets.push({ x: b.x + 40, y: b.y + 10, vx: 0, vy: 3.4 });
+      }
+      beep(200, 0.07, 'square', 0.1);
+    }
+  }
+
+  // --- 적 이동 + 슈터 발사 ---
+  for (const e of F.enemies) {
+    e.y += e.vy;
+    if (e.kind === 'ufo') e.x += Math.sin(frame * 0.06 + e.ph) * e.sway * 2.2;
+    if (e.kind === 'rock') e.ph += 0.04;
+    if (e.kind === 'shooter' && --e.shot <= 0) {
+      e.shot = 95;
+      const a = Math.atan2(sy - e.y, F.x - e.x);
+      F.ebullets.push({ x: e.x, y: e.y + 12, vx: Math.cos(a) * 2.9, vy: Math.sin(a) * 2.9 });
+      beep(300, 0.05, 'square', 0.07);
+    }
+    e.x = clamp(e.x, 16, W - 16);
+    // 기체 충돌
+    if (F.inv <= 0 && Math.abs(e.x - F.x) < (e.w + 26) / 2 - 4 && Math.abs(e.y - sy) < (e.h + 30) / 2 - 4) {
+      e.hp = 0;
+      e.dead = true;
+      F.booms.push({ x: e.x, y: e.y, r: 4, life: 20 });
+      fighterHit();
+    }
+  }
+  F.enemies = F.enemies.filter((e) => !e.dead && e.y < F.vh + 50);
+
+  // --- 플레이어 총알 ---
+  for (const b of F.bullets) {
+    b.y += b.vy;
+    b.x += b.vx || 0;
+    // 보스 피격
+    if (F.boss && Math.abs(b.x - F.boss.x) < 52 && Math.abs(b.y - F.boss.y) < 30) {
+      b.gone = true;
+      F.boss.hp--;
+      if (frame % 3 === 0) particles.push({ x: b.x, y: b.y, vx: rand(-1, 1), vy: rand(-1.5, 0), life: 10, color: '#ffe66d' });
+      if (F.boss.hp <= 0) {
+        F.booms.push({ x: F.boss.x, y: F.boss.y, r: 10, life: 34 });
+        F.score += 300;
+        const reward = 15 + F.bossN * 5;
+        F.coins += reward;
+        wallet += reward;
+        stats.coins += reward;
+        saveWallet();
+        addFloat(`👹 모선 격파! +300점 +${reward}🪙`, W / 2, 180, '#e67e22', 17, true, 90);
+        sfx.bonus();
+        vib(140);
+        shakeT = 16;
+        F.boss = null;
+      }
+      continue;
+    }
+    for (const e of F.enemies) {
+      if (e.dead) continue;
+      if (Math.abs(b.x - e.x) < e.w / 2 + 3 && Math.abs(b.y - e.y) < e.h / 2 + 4) {
+        b.gone = true;
+        e.hp--;
+        if (e.hp <= 0) {
+          e.dead = true;
+          F.score += e.pts;
+          F.booms.push({ x: e.x, y: e.y, r: 3, life: 18 });
+          sfx.hit();
+          const dropRoll = Math.random();
+          if (dropRoll < 0.3) F.drops.push({ x: e.x, y: e.y, vy: 2.2, kind: 'coin', spin: rand(0, 6) });
+          else if (dropRoll < 0.34) F.drops.push({ x: e.x, y: e.y, vy: 1.8, kind: ['double', 'spread', 'shield', 'heart'][Math.floor(Math.random() * 4)] });
+        } else {
+          particles.push({ x: b.x, y: b.y, vx: 0, vy: -1, life: 8, color: '#fff' });
+        }
+        break;
+      }
+    }
+  }
+  F.bullets = F.bullets.filter((b) => !b.gone && b.y > -30);
+
+  // --- 적 탄환 ---
+  for (const eb of F.ebullets) {
+    eb.x += eb.vx;
+    eb.y += eb.vy;
+    if (F.inv <= 0 && Math.hypot(eb.x - F.x, eb.y - sy) < 16) {
+      eb.gone = true;
+      fighterHit();
+    }
+  }
+  F.ebullets = F.ebullets.filter((eb) => !eb.gone && eb.y < F.vh + 30 && eb.y > -30 && eb.x > -20 && eb.x < W + 20);
+
+  // --- 드롭 (코인·파워업) ---
+  for (const dp of F.drops) {
+    dp.y += dp.vy;
+    dp.spin = (dp.spin || 0) + 0.15;
+    if (Math.hypot(dp.x - F.x, dp.y - sy) < 26) {
+      dp.gone = true;
+      if (dp.kind === 'coin') {
+        F.coins++;
+        wallet++;
+        stats.coins++;
+        saveWallet();
+        sfx.coin();
+      } else if (dp.kind === 'heart') {
+        F.hearts = Math.min(3, F.hearts + 1);
+        sfx.revive();
+        addFloat('❤️ +1', dp.x, dp.y - 14, '#e74c3c', 15, true, 50);
+      } else if (dp.kind === 'shield') {
+        F.pow.shield = Math.min(2, F.pow.shield + 1);
+        beep(900, 0.12, 'triangle', 0.14);
+        addFloat('🛡️ 실드!', dp.x, dp.y - 14, '#3f8efc', 15, true, 50);
+      } else {
+        F.pow[dp.kind] = 600; // 10초
+        sfx.bonus();
+        addFloat(dp.kind === 'double' ? '🔫 더블샷!' : '🎯 스프레드!', dp.x, dp.y - 14, '#8e44ad', 15, true, 50);
+      }
+    }
+  }
+  F.drops = F.drops.filter((dp) => !dp.gone && dp.y < F.vh + 30);
+
+  // --- 생존 점수 + 연출 ---
+  if (F.t % 30 === 0) F.score++;
+  if (F.inv > 0) F.inv--;
+  if (shakeT > 0) shakeT--;
+  for (const bm of F.booms) { bm.life--; bm.r += 2.6; }
+  F.booms = F.booms.filter((bm) => bm.life > 0);
+  for (const pt of particles) { pt.x += pt.vx; pt.y += pt.vy; pt.life--; }
+  particles = particles.filter((pt) => pt.life > 0);
+  for (const f of floatTexts) { f.life--; if (!f.screen) f.y -= 0.4; }
+  floatTexts = floatTexts.filter((f) => f.life > 0);
+  tickAnnounce();
+}
+
+function drawFighter() {
+  ctx.save();
+  ctx.scale(scale, scale);
+  const VH = canvas.height / scale;
+  if (shakeT > 0) ctx.translate(rand(-3, 3), rand(-3, 3));
+
+  // 우주 배경 + 스크롤 별
+  const bg = ctx.createLinearGradient(0, 0, 0, VH);
+  bg.addColorStop(0, '#070a1f');
+  bg.addColorStop(0.6, '#141a3d');
+  bg.addColorStop(1, '#232a5c');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, VH);
+  for (const s of (F ? F.stars : [])) {
+    const syp = (s.y + F.t * s.sp) % (VH + 20) - 10;
+    ctx.globalAlpha = s.sp > 2 ? 0.9 : 0.5;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(s.x, syp, s.r, s.r * (s.sp > 2 ? 4 : 2)); // 별이 아래로 흘러 속도감
+  }
+  ctx.globalAlpha = 1;
+  if (!F) { ctx.restore(); return; }
+  const sy = fighterShipY();
+
+  // 적 탄환
+  for (const eb of F.ebullets) {
+    ctx.fillStyle = '#ff6b6b';
+    ctx.shadowColor = 'rgba(255, 80, 80, 0.8)';
+    ctx.shadowBlur = 7;
+    ctx.beginPath();
+    ctx.arc(eb.x, eb.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#ffd5d5';
+    ctx.beginPath();
+    ctx.arc(eb.x - 1.2, eb.y - 1.2, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // 플레이어 총알
+  for (const b of F.bullets) {
+    ctx.fillStyle = 'rgba(120, 220, 255, 0.5)';
+    ctx.fillRect(b.x - 1.5, b.y + 4, 3, 10);
+    ctx.shadowColor = 'rgba(120, 220, 255, 0.9)';
+    ctx.shadowBlur = 6;
+    ctx.fillStyle = '#d9f4ff';
+    ctx.fillRect(b.x - 2, b.y - 6, 4, 11);
+    ctx.shadowBlur = 0;
+  }
+
+  // 적들
+  for (const e of F.enemies) {
+    ctx.save();
+    ctx.translate(e.x, e.y);
+    if (e.kind === 'pod') {
+      ctx.fillStyle = '#a06bc4';
+      ctx.strokeStyle = '#6c3483';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, 12);
+      ctx.lineTo(-12, -8);
+      ctx.quadraticCurveTo(0, -16, 12, -8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#ffdd59';
+      ctx.beginPath();
+      ctx.arc(0, -3, 4, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (e.kind === 'ufo') {
+      ctx.fillStyle = '#57e0a3';
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 15, 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#b8ffd9';
+      ctx.beginPath();
+      ctx.ellipse(0, -5, 7, 5, 0, Math.PI, 0);
+      ctx.fill();
+      ctx.fillStyle = '#2e8b60';
+      for (const dx of [-8, 0, 8]) {
+        ctx.beginPath();
+        ctx.arc(dx, 2.5, 1.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (e.kind === 'shooter') {
+      ctx.fillStyle = '#e17055';
+      ctx.strokeStyle = '#b0472f';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, 14);
+      ctx.lineTo(-14, -6);
+      ctx.lineTo(-6, -12);
+      ctx.lineTo(6, -12);
+      ctx.lineTo(14, -6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#2d3436';
+      ctx.fillRect(-2.5, 8, 5, 8); // 포신
+      ctx.fillStyle = '#ffeaa7';
+      ctx.beginPath();
+      ctx.arc(0, -2, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    } else { // rock
+      ctx.rotate(e.ph);
+      ctx.fillStyle = '#8d7b6f';
+      ctx.strokeStyle = '#5d5148';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-16, 2);
+      ctx.lineTo(-9, -14);
+      ctx.lineTo(6, -16);
+      ctx.lineTo(17, -4);
+      ctx.lineTo(12, 12);
+      ctx.lineTo(-6, 16);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.beginPath();
+      ctx.arc(-4, -2, 3.5, 0, Math.PI * 2);
+      ctx.arc(6, 5, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // 보스 모선
+  if (F.boss) {
+    const b = F.boss;
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.shadowColor = 'rgba(192, 57, 43, 0.7)';
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = '#5b3b8e';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 52, 22, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#8d6bc4';
+    ctx.beginPath();
+    ctx.ellipse(0, -10, 26, 14, 0, Math.PI, 0);
+    ctx.fill();
+    const bl = Math.floor(frame / 7) % 5;
+    for (let i = 0; i < 5; i++) {
+      ctx.fillStyle = i === bl ? '#ff6b6b' : 'rgba(255, 221, 89, 0.8)';
+      ctx.beginPath();
+      ctx.arc(-36 + i * 18, 8, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    // 체력바
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    roundRect(W / 2 - 70, 14, 140, 9, 4.5);
+    ctx.fillStyle = '#e74c3c';
+    roundRect(W / 2 - 70, 14, 140 * (b.hp / b.maxHp), 9, 4.5);
+  }
+
+  // 드롭
+  for (const dp of F.drops) {
+    ctx.save();
+    ctx.translate(dp.x, dp.y);
+    if (dp.kind === 'coin') {
+      const sq = Math.max(Math.abs(Math.sin(dp.spin)), 0.3);
+      ctx.scale(sq, 1);
+      ctx.fillStyle = '#f1c40f';
+      ctx.strokeStyle = '#b8860b';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      const col = { double: '#8e44ad', spread: '#e67e22', shield: '#3f8efc', heart: '#e74c3c' }[dp.kind];
+      const label = { double: 'W', spread: 'S', shield: 'B', heart: '❤' }[dp.kind];
+      ctx.shadowColor = col;
+      ctx.shadowBlur = 9;
+      ctx.fillStyle = col;
+      roundRect(-9, -9, 18, 18, 5);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#fff';
+      ctx.font = '900 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, 0, 1);
+    }
+    ctx.restore();
+  }
+
+  // 파티클 + 폭발 링
+  for (const pt of particles) {
+    ctx.globalAlpha = clamp(pt.life / 20, 0, 1);
+    ctx.fillStyle = pt.color;
+    ctx.fillRect(pt.x - 2, pt.y - 2, 4, 4);
+  }
+  ctx.globalAlpha = 1;
+  for (const bm of F.booms) {
+    const a = clamp(bm.life / 24, 0, 1);
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = '#ffb26b';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(bm.x, bm.y, bm.r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.arc(bm.x, bm.y, bm.r * 0.62, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // --- 플레이어 우주선 (문 런에서 탄 그 우주선!) ---
+  if (state !== State.OVER || F.hearts > 0) {
+    ctx.save();
+    ctx.translate(F.x, sy);
+    if (F.inv > 0 && Math.floor(F.inv / 6) % 2 === 0) ctx.globalAlpha = 0.4;
+    // 엔진 불꽃
+    ctx.fillStyle = 'rgba(255, 159, 67, 0.9)';
+    ctx.beginPath();
+    ctx.moveTo(-6, 16);
+    ctx.lineTo(0, 26 + Math.random() * 10);
+    ctx.lineTo(6, 16);
+    ctx.closePath();
+    ctx.fill();
+    // 몸체
+    const sg = ctx.createLinearGradient(0, -22, 0, 18);
+    sg.addColorStop(0, '#eef3fb');
+    sg.addColorStop(0.6, '#b9c6da');
+    sg.addColorStop(1, '#8fa0b8');
+    ctx.fillStyle = sg;
+    ctx.beginPath();
+    ctx.moveTo(0, -24);
+    ctx.quadraticCurveTo(13, -6, 11, 14);
+    ctx.lineTo(-11, 14);
+    ctx.quadraticCurveTo(-13, -6, 0, -24);
+    ctx.fill();
+    // 날개
+    ctx.fillStyle = '#7f94b0';
+    ctx.beginPath();
+    ctx.moveTo(-10, 4);
+    ctx.lineTo(-22, 15);
+    ctx.lineTo(-10, 13);
+    ctx.moveTo(10, 4);
+    ctx.lineTo(22, 15);
+    ctx.lineTo(10, 13);
+    ctx.fill();
+    // 조종석 (내 캐릭터!)
+    ctx.fillStyle = '#48c9e5';
+    ctx.beginPath();
+    ctx.arc(0, -4, 7, 0, Math.PI * 2);
+    ctx.fill();
+    if (charImgs.left) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(0, -4, 6, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(charImgs.left, -7.5, -12, 15, 15);
+      ctx.restore();
+    }
+    // 실드
+    if (F.pow.shield > 0) {
+      ctx.strokeStyle = 'rgba(116, 185, 255, 0.65)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, -2, 26 + Math.sin(frame * 0.1) * 2, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // 떠오르는 텍스트
+  for (const f of floatTexts) {
+    const fy = f.screen ? f.y : f.y - cameraY;
+    ctx.save();
+    ctx.globalAlpha = clamp(f.life / 40, 0, 1);
+    ctx.font = `900 ${f.size}px sans-serif`;
+    const hw = ctx.measureText(f.text).width / 2;
+    const fx3 = clamp(f.x, hw + 4, W - hw - 4);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.lineWidth = 4;
+    ctx.strokeText(f.text, fx3, fy);
+    ctx.fillStyle = f.color;
+    ctx.fillText(f.text, fx3, fy);
+    ctx.restore();
+  }
+  if (state === State.PLAYING || state === State.PAUSED || state === State.COUNTDOWN) drawAnnounce();
+
+  // HUD
+  if (!photoMode && (state === State.PLAYING || state === State.PAUSED || state === State.COUNTDOWN)) {
+    ctx.save();
+    ctx.translate(0, safeTopL());
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    roundRect(8, 8, 112, 34, 17);
+    roundRect(8, 48, 92, 28, 14);
+    ctx.fillStyle = '#2c3e50';
+    ctx.font = '900 19px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(F.score), 22, 26);
+    ctx.font = '800 15px sans-serif';
+    ctx.fillStyle = '#b7791f';
+    ctx.fillText('🪙 ' + F.coins, 18, 63);
+    ctx.font = '17px sans-serif';
+    ctx.fillText('❤️'.repeat(Math.max(0, F.hearts)) + '🖤'.repeat(Math.max(0, 3 - F.hearts)), 10, 92);
+    // 파워업 남은 시간
+    const powTxt = [];
+    if (F.pow.double > 0) powTxt.push(`🔫${Math.ceil(F.pow.double / 60)}s`);
+    if (F.pow.spread > 0) powTxt.push(`🎯${Math.ceil(F.pow.spread / 60)}s`);
+    if (F.pow.shield > 0) powTxt.push(`🛡️${F.pow.shield}`);
+    if (powTxt.length) {
+      ctx.font = '800 13px sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillText(powTxt.join(' '), 10, 116);
+    }
+    if (best3 > 0) {
+      ctx.font = '700 12px sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.textAlign = 'right';
+      ctx.fillText(`BEST ${best3}`, W - 60, 26);
+      ctx.textAlign = 'left';
+    }
+    ctx.restore();
+  }
+
+  // 카운트다운
+  if (state === State.COUNTDOWN) {
+    const remain = Math.max(0, countdownUntil - performance.now());
+    const n = Math.ceil(remain / 1000);
+    ctx.fillStyle = 'rgba(7, 10, 31, 0.55)';
+    ctx.fillRect(0, 0, W, VH);
+    ctx.fillStyle = '#fff';
+    ctx.font = '900 84px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(n), W / 2, VH / 2 - 60);
+    ctx.font = '800 19px sans-serif';
+    ctx.fillText('🛸 시리즈3 · 스타 파이터', W / 2, VH / 2 + 14);
+    ctx.font = '700 15px sans-serif';
+    ctx.fillStyle = '#cdd3ff';
+    ctx.fillText('◀ ▶ 버튼 · 드래그로 조종', W / 2, VH / 2 + 44);
+    ctx.fillText('발사는 자동! 파워업을 모으세요', W / 2, VH / 2 + 68);
+  }
+  ctx.restore();
+}
+
 // ==================== 시리즈 2: 문 런 (달 표면 러너) ====================
 // 60,000점 엔딩 클리어 시 해금 — 오른쪽으로 자동 질주, 점프/슬라이드로 장애물 회피!
 let runnerMode = false;
@@ -5220,6 +5923,9 @@ const RUN2_UNLOCK = 10000;
 function series2Unlocked() {
   return stats.bestScore >= RUN2_UNLOCK || best >= RUN2_UNLOCK || stats.moon;
 }
+// 시리즈3 해금: 문 런 3,000m 우주선 탑승 (시리즈2 클리어)
+const RUN2_GOAL = 3000;
+function series3Unlocked() { return !!stats.run2Clear; }
 
 // 문 런 가로 화면: 뷰포트가 세로면 CSS로 90° 회전 (폰을 돌려서 플레이)
 function updateRunnerOrientation() {
@@ -5267,7 +5973,7 @@ function initRunner() {
     hearts: 3, inv: 0, dist: 0, coins: 0, coinFrac: 0,
     obstacles: [], pickups: [], gaps: [], craters: [],
     spawnT: 90, gapSafe: 0, starT: 0, hinted: false,
-    vw: 640, rings: [],
+    vw: 640, rings: [], ship: null, clearT: 0,
     stars: Array.from({ length: 60 }, () => ({
       x: Math.random() * 800, y: Math.random() * (R_GROUND - 60),
       r: Math.random() * 1.4 + 0.5, tw: Math.random() * Math.PI * 2, layer: Math.random() < 0.5 ? 0.15 : 0.4,
@@ -5315,7 +6021,7 @@ function runnerHit(kind) {
   if (R.hearts <= 0) runnerOver();
 }
 
-function runnerOver() {
+function runnerOver(cleared2 = false, firstClear = false) {
   state = State.OVER;
   $('run-btns').classList.add('hidden');
   bgm.stop();
@@ -5330,11 +6036,12 @@ function runnerOver() {
   if (m > (stats.runnerBest || 0)) stats.runnerBest = m;
   saveStats();
   checkAchievements();
-  $('gameover-title').textContent = '🌕 문 런 종료!';
+  $('gameover-title').textContent = cleared2 ? '🚀 우주선 탑승 성공!' : '🌕 문 런 종료!';
   $('final-score').textContent = `${m}m`;
   $('final-coins').textContent = String(R.coins);
   $('final-best').textContent = `최고 기록 ${best2}m`;
-  $('final-stats').textContent = `🏃 ${m}m 질주 · 🪙 ${R.coins}개 획득`;
+  $('final-stats').textContent = `🏃 ${m}m 질주 · 🪙 ${R.coins}개 획득` +
+    (firstClear ? ' · 🛸 시리즈3 스타 파이터 해금!' : cleared2 ? ' · 시리즈2 클리어!' : '');
   $('new-record').classList.toggle('hidden', !isRecord);
   overScreen.classList.remove('hidden');
   pauseBtn.classList.add('hidden');
@@ -5356,8 +6063,47 @@ function updateRunner() {
     announce('⬆️ 점프 · ⬇️ 슬라이드 버튼으로 조작! (화면 탭도 가능)', '#2c3e50', 220);
   }
 
+  // --- 🚀 3,000m: 우주선 등장 → 탑승하면 시리즈2 클리어! ---
+  if (!R.ship && R.dist >= RUN2_GOAL - 120) {
+    R.ship = { x: R.vw + 260, boarded: false };
+    R.obstacles = R.obstacles.filter((o) => o.x < R.vw * 0.6); // 앞길 정리
+    R.gaps = [];
+    announce('🚀 우주선이 보인다! 달려가서 탑승하자!', '#e67e22', 200);
+  }
+  if (R.ship && !R.ship.boarded) {
+    R.ship.x -= spd;
+    if (R.ship.x <= R_PX + 26) { // 탑승!
+      R.ship.boarded = true;
+      R.clearT = 150;
+      R.obstacles = [];
+      R.gaps = [];
+      sfx.bonus();
+      vib([100, 60, 200]);
+    }
+  }
+  if (R.clearT > 0) { // 이륙 연출 → 클리어
+    R.clearT--;
+    R.ship.lift = (150 - R.clearT) * (150 - R.clearT) * 0.02; // 가속 상승
+    if (frame % 2 === 0) {
+      particles.push({ x: R.ship.x + rand(-10, 10), y: R_GROUND - 8 - (R.ship.lift || 0) + 26, vx: rand(-1, 1), vy: rand(1.5, 3.5), life: rand(12, 22), color: Math.random() < 0.5 ? '#ff9f43' : '#ffe66d' });
+    }
+    for (const pt of particles) { pt.x += pt.vx; pt.y += pt.vy; pt.life--; }
+    particles = particles.filter((pt) => pt.life > 0);
+    if (R.clearT === 0) {
+      const first = !stats.run2Clear;
+      stats.run2Clear = true;
+      saveStats();
+      checkAchievements();
+      R.dist = Math.max(R.dist, RUN2_GOAL);
+      runnerOver(true, first);
+    }
+    tickAnnounce();
+    return; // 연출 중엔 나머지 진행 정지
+  }
+
   // --- 스폰: 패턴 기반 (거리에 따라 다양한 조합 해금) ---
   if (R.gapSafe > 0) R.gapSafe--;
+  if (R.ship) R.spawnT = 999; // 우주선 등장 후엔 장애물 없음
   if (--R.spawnT <= 0) {
     const d = Math.min(1, R.dist / 2000);
     R.spawnT = Math.round(rand(42, 74) * (5.2 / spd));
@@ -5842,6 +6588,60 @@ function drawRunner() {
       ctx.restore();
     }
 
+    // --- 🚀 클리어 우주선 ---
+    if (R.ship) {
+      const shipY = R_GROUND - 34 - (R.ship.lift || 0);
+      ctx.save();
+      ctx.translate(R.ship.x, shipY);
+      ctx.shadowColor = 'rgba(130, 200, 255, 0.7)';
+      ctx.shadowBlur = 14;
+      // 몸체
+      const sg3 = ctx.createLinearGradient(0, -26, 0, 26);
+      sg3.addColorStop(0, '#eef3fb');
+      sg3.addColorStop(0.6, '#b9c6da');
+      sg3.addColorStop(1, '#8fa0b8');
+      ctx.fillStyle = sg3;
+      ctx.beginPath();
+      ctx.moveTo(0, -30);
+      ctx.quadraticCurveTo(16, -10, 14, 14);
+      ctx.lineTo(-14, 14);
+      ctx.quadraticCurveTo(-16, -10, 0, -30);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      // 창문 (탑승하면 캐릭터 얼굴!)
+      ctx.fillStyle = '#48c9e5';
+      ctx.beginPath();
+      ctx.arc(0, -6, 7.5, 0, Math.PI * 2);
+      ctx.fill();
+      if (R.ship.boarded && charImgs.left) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(0, -6, 6.5, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(charImgs.left, -8, -14, 16, 16);
+        ctx.restore();
+      }
+      // 다리 + 불꽃
+      ctx.strokeStyle = '#6b7a90';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(-10, 14);
+      ctx.lineTo(-14, 26);
+      ctx.moveTo(10, 14);
+      ctx.lineTo(14, 26);
+      ctx.stroke();
+      if (R.ship.boarded) {
+        ctx.fillStyle = 'rgba(255, 159, 67, 0.9)';
+        ctx.beginPath();
+        ctx.moveTo(-8, 16);
+        ctx.lineTo(0, 30 + Math.random() * 14);
+        ctx.lineTo(8, 16);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
     // --- 픽업 ---
     for (const c of R.pickups) {
       ctx.save();
@@ -5979,7 +6779,18 @@ function drawRunner() {
   ctx.restore();
 }
 
-$('btn-start').addEventListener('click', () => { runnerMode = false; dailyMode = false; startGame(); });
+$('btn-start').addEventListener('click', () => { runnerMode = false; fighterMode = false; dailyMode = false; startGame(); });
+$('btn-run3').addEventListener('click', () => {
+  if (!series3Unlocked()) {
+    const b = $('btn-run3');
+    b.innerHTML = '🔒 문 런 3,000m 우주선 탑승 시 해금!';
+    setTimeout(() => refreshMenu(), 1700);
+    beep(200, 0.1, 'square', 0.1);
+    return;
+  }
+  runnerMode = false;
+  startFighter();
+});
 $('btn-run2').addEventListener('click', () => {
   if (!series2Unlocked()) { // 시리즈1 10,000점 달성 시 해금
     const b = $('btn-run2');
@@ -5988,10 +6799,11 @@ $('btn-run2').addEventListener('click', () => {
     beep(200, 0.1, 'square', 0.1);
     return;
   }
+  fighterMode = false;
   startRunner();
 });
-$('btn-daily').addEventListener('click', () => { runnerMode = false; dailyMode = true; startGame(); });
-$('btn-retry').addEventListener('click', () => { if (runnerMode) startRunner(); else beginCountdown(); });
+$('btn-daily').addEventListener('click', () => { runnerMode = false; fighterMode = false; dailyMode = true; startGame(); });
+$('btn-retry').addEventListener('click', () => { if (runnerMode) startRunner(); else if (fighterMode) startFighter(); else beginCountdown(); });
 $('ctrl-touch').addEventListener('click', () => setControlMode('touch'));
 $('ctrl-tilt').addEventListener('click', () => setControlMode('tilt'));
 $('btn-help').addEventListener('click', showHelp);
@@ -6041,6 +6853,7 @@ $('btn-lb-back').addEventListener('click', () => {
 });
 $('lb-ser-1').addEventListener('click', () => { lbSeries = 1; renderLeaderboard(); });
 $('lb-ser-2').addEventListener('click', () => { lbSeries = 2; renderLeaderboard(); });
+$('lb-ser-3').addEventListener('click', () => { lbSeries = 3; renderLeaderboard(); });
 $('lb-tab-all').addEventListener('click', () => { lbTab = 'all'; renderLeaderboard(); });
 $('lb-tab-week').addEventListener('click', () => { lbTab = 'week'; renderLeaderboard(); });
 $('lb-tab-day').addEventListener('click', () => { lbTab = 'day'; renderLeaderboard(); });
@@ -6082,6 +6895,7 @@ startScreen.addEventListener('click', (e) => {
 $('btn-register').addEventListener('click', () => {
   if (!askNickname()) return;
   if (runnerMode && R) autoSubmitScore(Math.floor(R.dist), 'runner');
+  else if (fighterMode && F) autoSubmitScore(F.score, 'fighter');
   else autoSubmitScore();
 });
 
@@ -6179,7 +6993,7 @@ function enterOpMode() {
   for (const [id, d] of Object.entries(DEX)) dn[id] = d[2];
   localStorage.setItem('jump-dexn', JSON.stringify(dn));
   localStorage.setItem('jump-ach', JSON.stringify(ACHIEVEMENTS.map((a) => a.id)));
-  const st = Object.assign({}, stats, { moon: true });
+  const st = Object.assign({}, stats, { moon: true, run2Clear: true });
   localStorage.setItem('jump-stats', JSON.stringify(st));
   location.reload(); // 깨끗하게 재시작
 }
@@ -6266,9 +7080,10 @@ $('mp-ach').addEventListener('click', () => {
 });
 $('mp-moon').addEventListener('click', () => {
   stats.moon = true;
+  stats.run2Clear = true;
   saveStats();
   refreshMenu();
-  mpStatus('🌕 시리즈2 문 런 해금!');
+  mpStatus('🌕🛸 시리즈2·3 전부 해금!');
 });
 $('mp-god').addEventListener('click', () => {
   cheatGod = !cheatGod;
@@ -6288,7 +7103,7 @@ $('mp-reset').addEventListener('click', () => {
 });
 
 // ---------- 버전 표시 & 최신 버전 유도 ----------
-const GAME_VERSION = 61; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
+const GAME_VERSION = 62; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
 const verLabel = $('version-label');
 function setVerLabel(txt, cls) {
   if (!verLabel) return;

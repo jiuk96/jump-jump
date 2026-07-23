@@ -1478,3 +1478,17 @@ html, body {
   .dock-btn { transform: scale(0.9); }
 }
 /* 아주 큰 화면(태블릿): 컨테이너 최대 폭 제한 유지 + 중앙 정렬은 기본 CSS가 처리 */
+
+/* ---------- 시리즈3 해금 버튼 ---------- */
+.btn-run3.unlocked {
+  border: none;
+  background: linear-gradient(135deg, #16324f, #3a6ea5);
+  color: #fff;
+  box-shadow: 0 5px 14px rgba(30, 80, 140, 0.45), inset 0 -3px 0 rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+  padding: 12px 18px;
+  font-size: clamp(15px, 4.2vw, 17px);
+}
+.btn-run3.unlocked:active {
+  transform: scale(0.96);
+}
