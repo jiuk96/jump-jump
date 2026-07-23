@@ -1204,3 +1204,40 @@ html, body {
 .seg-btn.hidden {
   display: none;
 }
+
+/* ---------- ◀ ▶ 이동 버튼 (터치 모드) ---------- */
+.move-btns {
+  position: absolute;
+  bottom: max(18px, env(safe-area-inset-bottom));
+  left: 14px;
+  z-index: 5;
+  display: flex;
+  gap: 12px;
+}
+.move-btns.hidden {
+  display: none;
+}
+.move-btn {
+  width: 60px;
+  height: 60px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(44, 62, 80, 0.45);
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 22px;
+  font-weight: 900;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2), inset 0 0 0 2px rgba(255, 255, 255, 0.25);
+}
+.move-btn:active {
+  transform: scale(0.92);
+  background: rgba(44, 62, 80, 0.65);
+}
+/* 왼손잡이: 발사가 왼쪽으로 가면 이동 버튼은 오른쪽으로 */
+.lefty .move-btns {
+  left: auto;
+  right: 14px;
+}
