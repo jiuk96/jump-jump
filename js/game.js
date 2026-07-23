@@ -99,10 +99,10 @@ let ctx = canvas.getContext('2d');
 let scale = 1;
 
 function resize() {
-  const rect = canvas.getBoundingClientRect();
+  // clientWidth/Height는 CSS transform(가로 회전)의 영향을 받지 않는 레이아웃 크기
   const dpr = window.devicePixelRatio || 1;
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
+  canvas.width = canvas.clientWidth * dpr;
+  canvas.height = canvas.clientHeight * dpr;
   scale = canvas.width / W;
 }
 window.addEventListener('resize', resize);
@@ -1077,6 +1077,7 @@ function tickAnnounce() {
 }
 function drawAnnounce() {
   if (!curMsg) return;
+  const AW = (runnerMode && R && R.vw) ? R.vw : W; // 러너 가로 화면 폭
   const { text, color, t, dur } = curMsg;
   const fadeIn = clamp(t / 12, 0, 1);
   const fadeOut = clamp((dur - t) / 18, 0, 1);
@@ -1088,7 +1089,7 @@ function drawAnnounce() {
   let fs = 15;
   ctx.font = `800 ${fs}px sans-serif`;
   let lines = [text];
-  const maxTw = W - 52; // 알약 안쪽 최대 폭
+  const maxTw = AW - 52; // 알약 안쪽 최대 폭
   const rawTw = ctx.measureText(text).width;
   if (rawTw > maxTw) {
     if ((15 * maxTw) / rawTw >= 11) {
@@ -1116,11 +1117,11 @@ function drawAnnounce() {
     }
   }
   const tw = Math.max(...lines.map((l) => ctx.measureText(l).width));
-  const pw = Math.min(tw + 36, W - 16);
+  const pw = Math.min(tw + 36, AW - 16);
   const ph = lines.length > 1 ? 48 : 34;
   const py = 152 + slide;
   ctx.fillStyle = 'rgba(255,255,255,0.92)';
-  roundRect(W / 2 - pw / 2, py, pw, ph, 17);
+  roundRect(AW / 2 - pw / 2, py, pw, ph, 17);
   ctx.fillStyle = color;
   // 가운데 정렬을 좌표로 직접 계산 — 일부 iOS 웹킷의 textAlign 어긋남까지 원천 차단
   ctx.textAlign = 'left';
@@ -1128,7 +1129,7 @@ function drawAnnounce() {
   ctx.textBaseline = 'middle';
   const drawCentered = (line, yy) => {
     const lw = ctx.measureText(line).width;
-    ctx.fillText(line, W / 2 - lw / 2, yy);
+    ctx.fillText(line, AW / 2 - lw / 2, yy);
   };
   if (lines.length > 1) {
     drawCentered(lines[0], py + 15);
@@ -1174,10 +1175,15 @@ canvas.addEventListener('touchstart', (e) => {
   e.preventDefault();
   if (photoMode) { exitPhotoMode(); return; }
   if (state !== State.PLAYING) return;
-  if (runnerMode) { // 문 런: 왼쪽 탭 = 슬라이드, 오른쪽 탭 = 점프
+  if (runnerMode) { // 문 런: (가로 기준) 왼쪽 탭 = 슬라이드, 오른쪽 탭 = 점프
     const rect0 = canvas.getBoundingClientRect();
-    const tx = e.changedTouches[0].clientX - rect0.left;
-    if (tx < rect0.width / 2) R.slideHeld = true;
+    const t0 = e.changedTouches[0];
+    const rotated = document.getElementById('game-container').classList.contains('landscape');
+    // CSS 회전 상태에선 화면 세로축이 실제 가로 방향 (아래쪽 절반 = 왼손)
+    const slideSide = rotated
+      ? (t0.clientY - rect0.top) > rect0.height / 2
+      : (t0.clientX - rect0.left) < rect0.width / 2;
+    if (slideSide) R.slideHeld = true;
     else runnerJump();
     return;
   }
@@ -5165,6 +5171,7 @@ function goHome() {
   runnerMode = false;
   R = null;
   $('run-btns').classList.add('hidden');
+  updateRunnerOrientation(); // 세로 복귀
   state = State.MENU;
   bgm.stop();
   overScreen.classList.add('hidden');
@@ -5192,8 +5199,19 @@ function goHome() {
 let runnerMode = false;
 let R = null; // 러너 상태
 let best2 = parseInt(localStorage.getItem('jump-best2') || '0', 10);
-const R_GROUND = 508;   // 지면 y (발 위치)
-const R_PX = 84;        // 플레이어 고정 x
+const R_VH = 360;       // 러너 논리 높이 (가로 화면 기준)
+const R_GROUND = 296;   // 지면 y (발 위치)
+const R_PX = 110;       // 플레이어 고정 x
+
+// 문 런 가로 화면: 뷰포트가 세로면 CSS로 90° 회전 (폰을 돌려서 플레이)
+function updateRunnerOrientation() {
+  const gc = document.getElementById('game-container');
+  const portraitVp = window.innerHeight >= window.innerWidth;
+  gc.classList.toggle('landscape', runnerMode && portraitVp);       // 세로 기기: 90° 회전
+  gc.classList.toggle('landscape-full', runnerMode && !portraitVp); // 가로 기기: 전체 폭 사용
+  resize();
+}
+window.addEventListener('resize', updateRunnerOrientation);
 
 function startRunner() {
   runnerMode = true;
@@ -5214,6 +5232,7 @@ function startRunner() {
   showMoveBtns(false);
   $('run-btns').classList.remove('hidden'); // ⬆️⬇️ 러너 전용 버튼
   photoMode = false;
+  updateRunnerOrientation(); // 가로 화면 전환
   bgm.start();
 }
 
@@ -5230,8 +5249,9 @@ function initRunner() {
     hearts: 3, inv: 0, dist: 0, coins: 0, coinFrac: 0,
     obstacles: [], pickups: [], gaps: [], craters: [],
     spawnT: 90, gapSafe: 0, starT: 0, hinted: false,
-    stars: Array.from({ length: 46 }, () => ({
-      x: Math.random() * W, y: Math.random() * (R_GROUND - 80),
+    vw: 640, rings: [],
+    stars: Array.from({ length: 60 }, () => ({
+      x: Math.random() * 800, y: Math.random() * (R_GROUND - 60),
       r: Math.random() * 1.4 + 0.5, tw: Math.random() * Math.PI * 2, layer: Math.random() < 0.5 ? 0.15 : 0.4,
     })),
   };
@@ -5246,6 +5266,7 @@ function runnerSpeed() {
 function runnerJump() {
   if (!runnerMode || state !== State.PLAYING || !R || R.jumps <= 0) return;
   R.vy = R.jumps === 2 ? -12.4 : -10.6;
+  if (R.jumps === 1) R.rings.push({ x: R_PX, y: R.py - 8, r: 5, life: 16 }); // 더블 점프 링
   R.jumps--;
   R.sliding = false;
   (R.jumps === 1 ? sfx.jump : sfx.spring)();
@@ -5306,6 +5327,7 @@ function runnerOver() {
 
 function updateRunner() {
   frame++;
+  R.vw = canvas.width / (canvas.height / R_VH); // 가로 논리 폭 (기기별)
   if (cheatGod && R.inv < 30) R.inv = 30; // 🛠️ 운영자 무적
   const spd = runnerSpeed();
   R.dist += spd / 9; // 미터 환산
@@ -5321,7 +5343,7 @@ function updateRunner() {
   if (--R.spawnT <= 0) {
     const d = Math.min(1, R.dist / 2000);
     R.spawnT = Math.round(rand(42, 74) * (5.2 / spd));
-    const sx = W + 50;
+    const sx = R.vw + 50;
     const roll = Math.random();
     if (roll < 0.14) { // 코인 아치 / 슬라럼
       if (Math.random() < 0.5) {
@@ -5366,7 +5388,11 @@ function updateRunner() {
         [0.60, 1.4, () => meteor(sx + rand(-30, 60)), 0],                    // ☄️ 운석 낙하 (경고 후)
         [0.68, 1.2, () => { alien(sx); beam(sx + 170); }, 20],               // 외계인→슬라이드
         [0.76, 1.1, () => { drone(sx); rock(sx + 120); }, 18],               // 드론 밑 통과→점프
-        [0.85, 1.0, () => { rock(sx); rock(sx + 100); rock(sx + 200); }, 26] // 트리플 점프
+        [0.85, 1.0, () => { rock(sx); rock(sx + 100); rock(sx + 200); }, 26], // 트리플 점프
+        [0.30, 1.4, () => { for (let i = 0; i < 10; i++) R.pickups.push({ x: sx + i * 32, y: R_GROUND - 58 - Math.sin(i * 0.85) * 44, kind: 'coin', spin: i }); }, 10], // 🌊 파도 코인
+        [0.52, 1.3, () => { meteor(sx); meteor(sx + 150); }, 24],                 // ☄️☄️ 운석 소나기
+        [0.62, 1.2, () => { alien(sx); alien(sx + 95); alien(sx + 190); }, 26],   // 👽 외계인 러시
+        [0.72, 1.1, () => { gap(sx); beam(sx + 215); }, 22],                      // 🕳️→슬라이드
       ];
       const pool = P.filter((pt) => d >= pt[0]);
       let total = 0;
@@ -5394,6 +5420,7 @@ function updateRunner() {
           o.y = R_GROUND - 26;
           o.phase = 'ground';
           shakeT = Math.max(shakeT, 7);
+          R.rings.push({ x: o.x + o.w / 2, y: R_GROUND, r: 6, life: 18 });
           sfx.break();
           for (let i = 0; i < 8; i++) particles.push({ x: o.x + rand(-14, 14), y: R_GROUND - 4, vx: rand(-2, 2), vy: rand(-2.5, -0.5), life: rand(12, 22), color: '#ff9f43' });
         }
@@ -5423,7 +5450,18 @@ function updateRunner() {
     R.vy = 0;
     R.jumps = 2;
   }
-  if (R.py > H + 50) runnerHit('pit'); // 구덩이 추락
+  if (R.py > R_VH + 60) runnerHit('pit'); // 구덩이 추락
+
+  // 스타 무지개 트레일
+  if (R.starT > 0 && frame % 2 === 0) {
+    particles.push({ x: R_PX - 16, y: R.py - 20 + rand(-12, 12), vx: rand(-2.5, -1.2), vy: rand(-0.4, 0.4), life: 18, color: `hsl(${(frame * 16) % 360}, 92%, 62%)` });
+  }
+  // 슬라이드 스키드 먼지
+  if (R.sliding && frame % 3 === 0) {
+    particles.push({ x: R_PX + rand(-14, 6), y: R_GROUND - 2, vx: rand(-2.4, -1.2), vy: rand(-1.2, -0.2), life: rand(10, 18), color: 'rgba(220, 224, 234, 0.9)' });
+  }
+  for (const rg of R.rings) { rg.life--; rg.r += 3.2; }
+  R.rings = R.rings.filter((rg) => rg.life > 0);
 
   // 달리기 먼지
   if (onGround && frame % 6 === 0) {
@@ -5464,6 +5502,7 @@ function updateRunner() {
         wallet += gain;
         stats.coins += gain;
         saveWallet();
+        for (let i = 0; i < 4; i++) particles.push({ x: c.x + rand(-6, 6), y: c.y + rand(-6, 6), vx: rand(-1.4, 1.4), vy: rand(-1.8, -0.4), life: rand(10, 16), color: '#ffe98a' });
         sfx.coin();
       } else if (c.kind === 'heart') {
         R.hearts = Math.min(3, R.hearts + 1);
@@ -5490,8 +5529,10 @@ function updateRunner() {
 
 function drawRunner() {
   ctx.save();
-  ctx.scale(scale, scale); // draw()와 동일한 DPR 스케일 적용
-  const VH = canvas.height / scale; // 실제 보이는 논리 높이 (긴 화면 대응)
+  const s2 = canvas.height / R_VH; // 가로 화면: 논리 높이 360 고정
+  ctx.scale(s2, s2);
+  const RVW = canvas.width / s2;   // 가로 논리 폭 (기기별 640~800)
+  const VH = R_VH;
   if (shakeT > 0) ctx.translate(rand(-3, 3), rand(-3, 3));
 
   // --- 우주 배경 ---
@@ -5500,10 +5541,10 @@ function drawRunner() {
   bg.addColorStop(0.7, '#1a1f4a');
   bg.addColorStop(1, '#232a5c');
   ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, W, VH);
+  ctx.fillRect(0, 0, RVW, VH);
   // 별 (패럴랙스 반짝임)
   for (const s of (R ? R.stars : [])) {
-    const sxp = ((s.x - R.dist * 9 * s.layer) % (W + 20) + W + 20) % (W + 20) - 10;
+    const sxp = ((s.x - R.dist * 9 * s.layer) % (RVW + 20) + RVW + 20) % (RVW + 20) - 10;
     ctx.globalAlpha = 0.5 + Math.sin(frame * 0.05 + s.tw) * 0.4;
     ctx.fillStyle = '#fff';
     ctx.beginPath();
@@ -5513,7 +5554,7 @@ function drawRunner() {
   ctx.globalAlpha = 1;
   // 지구 (오른쪽 위)
   ctx.save();
-  ctx.translate(W - 64, 92);
+  ctx.translate(RVW - 64, 78);
   ctx.shadowColor = 'rgba(90, 160, 255, 0.7)';
   ctx.shadowBlur = 18;
   const eg = ctx.createRadialGradient(-8, -8, 4, 0, 0, 30);
@@ -5541,7 +5582,7 @@ function drawRunner() {
     ctx.lineWidth = 2;
     for (let i = 0; i < 7; i++) {
       const ly = 60 + ((i * 97) % (R_GROUND - 120));
-      const lx = W - ((R.dist * 46 + i * 173) % (W + 160)) + 40;
+      const lx = RVW - ((R.dist * 46 + i * 173) % (RVW + 160)) + 40;
       const ln = 30 + (i % 3) * 22;
       ctx.beginPath();
       ctx.moveTo(lx, ly);
@@ -5554,11 +5595,11 @@ function drawRunner() {
   ctx.fillStyle = '#2e3560';
   ctx.beginPath();
   ctx.moveTo(0, R_GROUND);
-  for (let x = 0; x <= W; x += 24) {
+  for (let x = 0; x <= RVW; x += 24) {
     const wx = x + (R ? R.dist * 2.2 : 0);
     ctx.lineTo(x, R_GROUND - 26 - Math.abs(Math.sin(wx * 0.012)) * 46);
   }
-  ctx.lineTo(W, R_GROUND);
+  ctx.lineTo(RVW, R_GROUND);
   ctx.closePath();
   ctx.fill();
 
@@ -5568,7 +5609,7 @@ function drawRunner() {
   gg2.addColorStop(0.12, '#9aa0ad');
   gg2.addColorStop(1, '#6d7280');
   ctx.fillStyle = gg2;
-  ctx.fillRect(0, R_GROUND, W, VH - R_GROUND);
+  ctx.fillRect(0, R_GROUND, RVW, VH - R_GROUND);
   if (R) {
     // 크레이터
     for (const cr of R.craters) {
@@ -5596,7 +5637,7 @@ function drawRunner() {
     // 지면 라인
     ctx.strokeStyle = 'rgba(235, 238, 245, 0.8)';
     ctx.lineWidth = 2.5;
-    for (let x = 0; x < W + 30; x += 4) { // 구덩이 위는 선을 끊음
+    for (let x = 0; x < RVW + 30; x += 4) { // 구덩이 위는 선을 끊음
       const inGap = R.gaps.some((g) => x > g.x && x < g.x + g.w);
       if (!inGap) {
         ctx.beginPath();
@@ -5825,6 +5866,18 @@ function drawRunner() {
     }
     ctx.globalAlpha = 1;
 
+    // --- 확장 링 이펙트 (더블 점프·운석 충격) ---
+    for (const rg of R.rings) {
+      ctx.save();
+      ctx.globalAlpha = clamp(rg.life / 16, 0, 1) * 0.8;
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.ellipse(rg.x, rg.y, rg.r, rg.r * 0.45, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     // --- 플레이어 (오른쪽 보기 = 좌우 반전) ---
     ctx.save();
     ctx.translate(R_PX, R.py - (R.sliding ? 12 : 23));
@@ -5875,7 +5928,7 @@ function drawRunner() {
     ctx.globalAlpha = clamp(f.life / 40, 0, 1);
     ctx.font = `900 ${f.size}px sans-serif`;
     const halfW2 = ctx.measureText(f.text).width / 2;
-    const fx2 = clamp(f.x, halfW2 + 4, W - halfW2 - 4);
+    const fx2 = clamp(f.x, halfW2 + 4, RVW - halfW2 - 4);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.strokeStyle = 'rgba(255,255,255,0.9)';
@@ -5892,18 +5945,18 @@ function drawRunner() {
     const remain = Math.max(0, countdownUntil - performance.now());
     const n = Math.ceil(remain / 1000);
     ctx.fillStyle = 'rgba(10, 12, 38, 0.55)';
-    ctx.fillRect(0, 0, W, VH);
+    ctx.fillRect(0, 0, RVW, VH);
     ctx.fillStyle = '#fff';
     ctx.font = '900 84px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(String(n), W / 2, H / 2 - 40);
+    ctx.fillText(String(n), RVW / 2, R_VH / 2 - 52);
     ctx.font = '800 19px sans-serif';
-    ctx.fillText('🌕 시리즈2 · 문 런', W / 2, H / 2 + 34);
+    ctx.fillText('🌕 시리즈2 · 문 런', RVW / 2, R_VH / 2 + 22);
     ctx.font = '700 15px sans-serif';
     ctx.fillStyle = '#cdd3ff';
-    ctx.fillText('⬆️ 점프 버튼 · ⬇️ 슬라이드 버튼', W / 2, H / 2 + 66);
-    ctx.fillText('(화면 좌/우 탭, 방향키 ↑↓도 가능)', W / 2, H / 2 + 90);
+    ctx.fillText('⬆️ 점프 버튼 · ⬇️ 슬라이드 버튼', RVW / 2, R_VH / 2 + 52);
+    ctx.fillText('(화면 좌/우 탭, 방향키 ↑↓도 가능)', RVW / 2, R_VH / 2 + 76);
   }
   ctx.restore();
 }
@@ -6217,7 +6270,7 @@ $('mp-reset').addEventListener('click', () => {
 });
 
 // ---------- 버전 표시 & 최신 버전 유도 ----------
-const GAME_VERSION = 59; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
+const GAME_VERSION = 60; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
 const verLabel = $('version-label');
 function setVerLabel(txt, cls) {
   if (!verLabel) return;

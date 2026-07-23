@@ -1434,3 +1434,23 @@ html, body {
 .run-btn.jump:active {
   background: rgba(108, 92, 231, 0.55);
 }
+
+/* ---------- 🏃 문 런 가로 화면 (세로 기기에서 90° 회전) ---------- */
+#game-container.landscape {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100dvh;
+  height: 100dvw;
+  max-width: none;
+  aspect-ratio: auto;
+  transform: rotate(90deg) translateY(-100%);
+  transform-origin: top left;
+}
+/* 브라우저 자체가 가로일 땐 회전 없이 전체 화면 사용 */
+#game-container.landscape-full {
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  aspect-ratio: auto;
+}
