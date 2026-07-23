@@ -3046,6 +3046,18 @@ function drawCannon(cn) {
   if (y < -60 || y > H + 60) return;
   ctx.save();
   ctx.translate(cn.x, y);
+  ctx.translate(0, Math.sin(frame * 0.05 + cn.osc) * 1.5); // 둥실둥실
+  // 구름 받침: 공중에 떠 있어도 폭탄처럼 안 보이게 확실한 발판을 그려줌
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+  ctx.beginPath();
+  ctx.ellipse(0, 17, 23, 8.5, 0, 0, Math.PI * 2);
+  ctx.ellipse(-14, 14, 11, 7, 0, 0, Math.PI * 2);
+  ctx.ellipse(13, 14, 12, 7.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(185, 200, 216, 0.55)';
+  ctx.beginPath();
+  ctx.ellipse(0, 20, 18, 4.5, 0, 0, Math.PI * 2);
+  ctx.fill();
   const holding = holdCannon === cn;
   // 조준선 (들어가 있을 때)
   if (holding) {
