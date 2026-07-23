@@ -35,11 +35,13 @@ const PRICES = {
   life: 150, rocket: 50, magnet: 75,
   bow: 800, scarf: 1000, hat: 1200, glasses: 1500, headphones: 1800,
   tophat: 2200, crown: 3000, cape: 3500, wings: 5000,
+  bowtie: 1400, mustache: 1600, monocle: 1800, heartglasses: 2000,
+  partyhat: 2000, bunnyears: 2400, beret: 2600, backpack: 2600,
+  pearl: 2800, balloonpack: 3200, propeller: 3600, viking: 4200, halo: 4800,
+  trail_bubble: 4500, trail_note: 5000, trail_spark: 5500,
 };
-const MAX_OWN = {
-  life: 3, rocket: 9, magnet: 9,
-  bow: 1, hat: 1, glasses: 1, headphones: 1, tophat: 1, crown: 1, scarf: 1, cape: 1, wings: 1,
-};
+const MAX_OWN = { life: 3, rocket: 9, magnet: 9 };
+// 꾸미기 아이템은 모두 1개만 (아래에서 일괄 등록)
 
 // ---------- 발판 ----------
 const PLAT_W = 62;
@@ -107,11 +109,20 @@ const CHARACTERS = {
   rabbit: { name: '토실이', emoji: '🐰', price: 0, desc: '점프력 +10%', dir: 'rabbit/' },
   penguin: { name: '펭펭', emoji: '🐧', price: 0, desc: '얼음에서 안 미끄러움 · 코인 +10%', dir: 'penguin/' },
   cat: { name: '나비', emoji: '🐱', price: 0, desc: '한 판에 한 번 낙사 무시', dir: 'cat/' },
+  fox: { name: '여울', emoji: '🦊', price: 3000, desc: '기본 자석 +40px', dir: 'fox/' },
+  bear: { name: '모카', emoji: '🐻', price: 6000, desc: '보호막 +1회/판', dir: 'bear/' },
+  owl: { name: '부기', emoji: '🦉', price: 10000, desc: '활공 — 낙하 속도 -18%', dir: 'owl/' },
+  dragon: { name: '드래고', emoji: '🐲', price: 18000, desc: '탄창 +3발', dir: 'dragon/' },
+  unicorn: { name: '루나', emoji: '🦄', price: 30000, desc: '스타 파워 지속 +30%', dir: 'unicorn/' },
 };
-// 지금은 모든 캐릭터 무료 개방
-let ownedChars = new Set(Object.keys(CHARACTERS));
+// 기본 4종은 무료, 나머지 5종은 코인으로 해금
+const FREE_CHARS = ['dungi', 'rabbit', 'penguin', 'cat'];
+let ownedChars = new Set(FREE_CHARS);
+try {
+  JSON.parse(localStorage.getItem('jump-chars') || '[]').forEach((c) => { if (CHARACTERS[c]) ownedChars.add(c); });
+} catch (e) {}
 let curChar = localStorage.getItem('jump-char') || 'dungi';
-if (!CHARACTERS[curChar]) curChar = 'dungi';
+if (!CHARACTERS[curChar] || !ownedChars.has(curChar)) curChar = 'dungi';
 function saveChars() {
   localStorage.setItem('jump-chars', JSON.stringify([...ownedChars]));
   localStorage.setItem('jump-char', curChar);
@@ -169,7 +180,7 @@ function upgCost(k) {
   const d = UPGRADES[k];
   return Math.round(d.base * Math.pow(d.growth, upg[k]) / 10) * 10;
 }
-function ammoMax() { return AMMO_MAX + Math.floor(upg.ammo / 5); }
+function ammoMax() { return AMMO_MAX + Math.floor(upg.ammo / 5) + (curChar === 'dragon' ? 3 : 0); }
 function reloadTime() { return Math.round(RELOAD_TIME * (1 - 0.01 * upg.reload)); }
 function coinValue() { return 1 + Math.floor(score / 10000); } // 높이 오를수록 코인 가치 상승
 
@@ -180,7 +191,7 @@ function hasPierce() { return upg.ammo >= 15; }
 function hasDoubleShot() { return upg.ammo >= 35; }
 function thunderNeed() { return Math.max(5, 14 - Math.floor(upg.thunder / 5)); }
 function thunderBolts() { return upg.thunder >= 50 ? 3 : upg.thunder >= 25 ? 2 : 1; }
-function shieldMax() { return upg.shield > 0 ? Math.ceil(upg.shield / 10) : 0; }
+function shieldMax() { return (upg.shield > 0 ? Math.ceil(upg.shield / 10) : 0) + (curChar === 'bear' ? 1 : 0); } // 곰: +1회
 function hasGems() { return upg.coinup >= 20; }
 function hasGoldenTouch() { return upg.coinup >= 40; }
 
@@ -189,7 +200,8 @@ function jumpV() {
   return JUMP_VY * (1 + upg.jump * 0.004 + (curChar === 'rabbit' ? 0.10 : 0));
 }
 function magnetRangeNow() {
-  return magnetActive ? MAGNET_RANGE : (upg.magnet > 0 ? 28 + upg.magnet * 2 : 0);
+  const base = (upg.magnet > 0 ? 28 + upg.magnet * 2 : 0) + (curChar === 'fox' ? 40 : 0); // 여우: 자석 +40px
+  return magnetActive ? MAGNET_RANGE : Math.min(150, base);
 }
 function starGoalNow() { return STAR_GOAL - Math.floor(upg.star / 10); }
 
@@ -235,13 +247,8 @@ const sfx = {
 // ---------- 저장 데이터 (지갑/인벤토리) ----------
 let best = Number(localStorage.getItem('jump-best') || 0);
 let wallet = Number(localStorage.getItem('jump-coins') || 0);
-let inv = {
-  life: 0, rocket: 0, magnet: 0,
-  hat: 0, scarf: 0, glasses: 0, bow: 0, headphones: 0, tophat: 0, crown: 0, cape: 0, wings: 0,
-};
-try {
-  inv = Object.assign(inv, JSON.parse(localStorage.getItem('jump-inv') || '{}'));
-} catch (e) { /* 손상된 저장값은 무시 */ }
+let inv = { life: 0, rocket: 0, magnet: 0 };
+// (꾸미기 슬롯 등록 후 아래 COSMETICS 블록에서 저장값을 병합)
 
 function saveWallet() { localStorage.setItem('jump-coins', String(wallet)); }
 function saveInv() { localStorage.setItem('jump-inv', JSON.stringify(inv)); }
@@ -249,7 +256,7 @@ function saveInv() { localStorage.setItem('jump-inv', JSON.stringify(inv)); }
 // ---------- 누적 통계 & 도전과제 ----------
 let stats = {
   runs: 0, totalScore: 0, bestScore: 0, coins: 0, kills: 0,
-  missions: 0, stars: 0, maxCombo: 0, revives: 0, space: false,
+  missions: 0, stars: 0, maxCombo: 0, revives: 0, space: false, dailyRuns: 0,
 };
 try { stats = Object.assign(stats, JSON.parse(localStorage.getItem('jump-stats') || '{}')); } catch (e) {}
 let unlockedAch = new Set();
@@ -269,6 +276,38 @@ const ACHIEVEMENTS = [
   { id: 'total100k', name: '마라토너', desc: '누적 100,000점 오르기', target: 100000, get: (s) => s.totalScore, reward: 300 },
   { id: 'revive3', name: '불사조', desc: '생명으로 3회 부활', target: 3, get: (s) => s.revives, reward: 100 },
   { id: 'moon', name: '달 정복자', desc: '달에 착륙하기 (30,000점)', target: 1, get: (s) => (s.moon ? 1 : 0), reward: 500 },
+  { id: 'score20k', name: '별바다 항해사', desc: '한 판에 20,000점 달성', target: 20000, get: (s) => s.bestScore, reward: 300 },
+  { id: 'score25k', name: '중력을 거부한 자', desc: '한 판에 25,000점 달성', target: 25000, get: (s) => s.bestScore, reward: 400 },
+  { id: 'coins2k', name: '알뜰한 저금왕', desc: '코인 누적 2,000개 모으기', target: 2000, get: (s) => s.coins, reward: 300 },
+  { id: 'coins5k', name: '코인 재벌', desc: '코인 누적 5,000개 모으기', target: 5000, get: (s) => s.coins, reward: 400 },
+  { id: 'coins20k', name: '황금 손', desc: '코인 누적 20,000개 모으기', target: 20000, get: (s) => s.coins, reward: 800 },
+  { id: 'kill150', name: '몬스터 킬러', desc: '몬스터 누적 150마리 처치', target: 150, get: (s) => s.kills, reward: 300 },
+  { id: 'kill500', name: '몬스터 학살자', desc: '몬스터 누적 500마리 처치', target: 500, get: (s) => s.kills, reward: 500 },
+  { id: 'boss10', name: '보스 사냥꾼', desc: '보스 누적 10회 격파', target: 10, get: () => dexN.bossmon || 0, reward: 300 },
+  { id: 'boss4kill', name: '어둠을 이긴 자', desc: '암흑 제왕(4번째 보스) 격파', target: 1, get: () => dexN.boss4 || 0, reward: 400 },
+  { id: 'mission60', name: '미션 사냥꾼', desc: '미션 60회 완수', target: 60, get: (s) => s.missions, reward: 300 },
+  { id: 'mission150', name: '미션의 화신', desc: '미션 150회 완수', target: 150, get: (s) => s.missions, reward: 500 },
+  { id: 'star15', name: '별빛 수호자', desc: '스타 파워 15회 발동', target: 15, get: (s) => s.stars, reward: 250 },
+  { id: 'star40', name: '별 수집왕', desc: '스타 파워 40회 발동', target: 40, get: (s) => s.stars, reward: 400 },
+  { id: 'combo50', name: '콤보 마스터', desc: '한 판에 콤보 50 달성', target: 50, get: (s) => s.maxCombo, reward: 400 },
+  { id: 'combo80', name: '리듬의 신', desc: '한 판에 콤보 80 달성', target: 80, get: (s) => s.maxCombo, reward: 600 },
+  { id: 'runs150', name: '점프 중독자', desc: '150판 플레이', target: 150, get: (s) => s.runs, reward: 300 },
+  { id: 'total500k', name: '하늘길 개척자', desc: '누적 500,000점 오르기', target: 500000, get: (s) => s.totalScore, reward: 400 },
+  { id: 'total1m', name: '백만 클라이머', desc: '누적 1,000,000점 오르기', target: 1000000, get: (s) => s.totalScore, reward: 600 },
+  { id: 'revive10', name: '오뚝이', desc: '생명으로 10회 부활', target: 10, get: (s) => s.revives, reward: 200 },
+  { id: 'daily5', name: '성실한 도전자', desc: '데일리 챌린지 5회 참가', target: 5, get: (s) => s.dailyRuns || 0, reward: 200 },
+  { id: 'dex15', name: '탐구자', desc: '도감 15종 완성', target: 15, get: () => dex.size, reward: 300 },
+  { id: 'dexall', name: '도감의 지배자', desc: '도감 33종 전부 완성', target: 33, get: () => dex.size, reward: 1000 },
+  { id: 'upg50', name: '강화 견습생', desc: '강화 레벨 합계 50 달성', target: 50, get: () => Object.values(upg).reduce((a, b) => a + b, 0), reward: 300 },
+  { id: 'upg200', name: '강화의 신', desc: '강화 레벨 합계 200 달성', target: 200, get: () => Object.values(upg).reduce((a, b) => a + b, 0), reward: 800 },
+  { id: 'char6', name: '동물 친구들', desc: '캐릭터 6종 보유', target: 6, get: () => ownedChars.size, reward: 300 },
+  { id: 'char9', name: '드림팀 감독', desc: '캐릭터 9종 전부 보유', target: 9, get: () => ownedChars.size, reward: 800 },
+  { id: 'dj100', name: '날개 돋친 듯', desc: '더블 점프 누적 100회', target: 100, get: () => dexN.djump || 0, reward: 300 },
+  { id: 'bolt50', name: '뇌신', desc: '낙뢰로 누적 50마리 처치', target: 50, get: () => dexN.bolt || 0, reward: 400 },
+  { id: 'shield20', name: '철벽 수비수', desc: '보호막으로 20회 방어', target: 20, get: () => dexN.shieldhit || 0, reward: 300 },
+  { id: 'rps3', name: '가위바위보 달인', desc: '가위바위보 부활전 3회 승리', target: 3, get: () => dexN.rpswin || 0, reward: 200 },
+  { id: 'fashion5', name: '패셔니스타', desc: '꾸미기 아이템 5개 보유', target: 5, get: () => COSMETICS.filter((k) => inv[k]).length, reward: 300 },
+  { id: 'fashion12', name: '스타일 아이콘', desc: '꾸미기 아이템 12개 보유', target: 12, get: () => COSMETICS.filter((k) => inv[k]).length, reward: 600 },
 ];
 
 const achToast = []; // 달성 알림 대기열
@@ -291,11 +330,20 @@ function checkAchievements() {
 // 슬롯: 같은 슬롯 아이템은 하나만 착용 가능
 const COSMETIC_SLOTS = {
   hat: 'head', crown: 'head', tophat: 'head', bow: 'head', headphones: 'head',
-  glasses: 'face',
-  scarf: 'neck',
-  wings: 'back', cape: 'back',
+  partyhat: 'head', beret: 'head', bunnyears: 'head', propeller: 'head', viking: 'head', halo: 'head',
+  glasses: 'face', monocle: 'face', heartglasses: 'face', mustache: 'face',
+  scarf: 'neck', bowtie: 'neck', pearl: 'neck',
+  wings: 'back', cape: 'back', backpack: 'back', balloonpack: 'back',
+  trail_spark: 'trail', trail_bubble: 'trail', trail_note: 'trail',
 };
 const COSMETICS = Object.keys(COSMETIC_SLOTS);
+for (const k of COSMETICS) {
+  MAX_OWN[k] = 1;
+  if (!(k in inv)) inv[k] = 0;
+}
+try {
+  inv = Object.assign(inv, JSON.parse(localStorage.getItem('jump-inv') || '{}'));
+} catch (e) { /* 손상된 저장값은 무시 */ }
 let equip = {};
 for (const k of COSMETICS) equip[k] = false;
 try { equip = Object.assign(equip, JSON.parse(localStorage.getItem('jump-equip') || '{}')); } catch (e) {}
@@ -452,8 +500,14 @@ const DEX = {
   bug: ['👾', '몬스터', 30, '처치'], ufo: ['🛸', 'UFO', 10, '격추'],
   blackhole: ['🕳️', '블랙홀', 15, '만나기'], dizzy: ['😵', '어지럼 구름', 6, '당하기'],
   bossmon: ['👹', '보스', 5, '격파'],
-  rain: ['🌧️', '비', 8, '만나기'], snow: ['❄️', '눈', 8, '만나기'], wind: ['💨', '강풍', 10, '버티기'],
+  rain: ['🌧️', '비', 8, '만나기'], snow: ['🌨️', '눈', 8, '만나기'], wind: ['💨', '강풍', 10, '버티기'],
   moon: ['🌕', '달', 1, '착륙'],
+  gem: ['💎', '보석', 10, '모으기 (코인 부스터 Lv20)'], bolt: ['🌩️', '낙뢰', 15, '번개 강화로 처치'],
+  shieldhit: ['🛡️', '보호막', 10, '피격 방어'], djump: ['🪽', '더블 점프', 30, '사용 (점프력 Lv10)'],
+  gold: ['✨', '골든 터치', 10, '발판에서 코인 (Lv40)'], rpswin: ['✊', '가위바위보', 3, '부활전 승리'],
+  fire: ['🌋', '불길', 15, '만나기'], grav: ['🌌', '무중력', 5, '우주 도달'],
+  boss2: ['🔥', '화염 대왕', 2, '2번째 보스 격파'], boss3: ['❄️', '얼음 마왕', 2, '3번째 보스 격파'],
+  boss4: ['👑', '암흑 제왕', 2, '4번째 보스 격파'], ghost: ['👻', '고스트', 5, '내 기록과 경주'],
 };
 let dex = new Set(); // 완성된 항목
 try { JSON.parse(localStorage.getItem('jump-dex') || '[]').forEach((d) => dex.add(d)); } catch (e) {}
@@ -667,10 +721,10 @@ function starPower() {
     flashSub = '🛡️ 무적!';
   } else {
     flashSub = '무적 비행!';
-    jetpackTimer = Math.max(jetpackTimer, 0) + Math.round(STAR_FLIGHT * (1 + 0.01 * upg.star));
+    jetpackTimer = Math.max(jetpackTimer, 0) + Math.round(STAR_FLIGHT * (1 + 0.01 * upg.star) * (curChar === 'unicorn' ? 1.3 : 1));
     jetpackSlow = false;
   }
-  invincible = Math.max(invincible, Math.round(STAR_FLIGHT * (1 + 0.01 * upg.star)) + 60);
+  invincible = Math.max(invincible, Math.round(STAR_FLIGHT * (1 + 0.01 * upg.star) * (curChar === 'unicorn' ? 1.3 : 1)) + 60);
   sfx.bonus();
   vib(80);
   addBurst(player.x, player.y, '#ffd832');
@@ -799,6 +853,7 @@ let airJumps;          // 남은 공중(더블) 점프 (점프력 Lv10 해금)
 let thunderCombo;      // 번개 충전 콤보 (번개 강화)
 let shieldCharges;     // 남은 보호막 (보호막 강화)
 let boltFx;            // 낙뢰 연출 [{x,y,life,seed}]
+let trailFx;           // 발자국 꾸미기 연출 [{x,y,life,kind,ph}]
 let fireY;             // 아래에서 올라오는 불길 (월드 y)
 let fireOn;            // 불길 활성화 여부
 let fireAnnounced;
@@ -859,16 +914,52 @@ function drawAnnounce() {
   const slide = (1 - fadeIn) * -12;
   ctx.save();
   ctx.globalAlpha = a;
-  ctx.font = '800 15px sans-serif';
-  const tw = ctx.measureText(text).width;
+  // 긴 문구 짤림 방지: 글씨 자동 축소 → 그래도 길면 두 줄로 나눔
+  let fs = 15;
+  ctx.font = `800 ${fs}px sans-serif`;
+  let lines = [text];
+  const maxTw = W - 52; // 알약 안쪽 최대 폭
+  const rawTw = ctx.measureText(text).width;
+  if (rawTw > maxTw) {
+    if ((15 * maxTw) / rawTw >= 11) {
+      fs = Math.floor((15 * maxTw) / rawTw);
+    } else {
+      // 두 줄: 가운데에서 가장 가까운 공백에서 자름
+      const mid = Math.floor(text.length / 2);
+      let cut = -1;
+      for (let o = 0; o <= mid; o++) {
+        if (text[mid - o] === ' ') { cut = mid - o; break; }
+        if (text[mid + o] === ' ') { cut = mid + o; break; }
+      }
+      if (cut > 0) {
+        lines = [text.slice(0, cut), text.slice(cut + 1)];
+        fs = 13;
+      } else {
+        fs = 11;
+      }
+    }
+    ctx.font = `800 ${fs}px sans-serif`;
+    let tw2 = Math.max(...lines.map((l) => ctx.measureText(l).width));
+    if (tw2 > maxTw) { // 여전히 넘치면 한 번 더 축소
+      fs = Math.max(9, Math.floor((fs * maxTw) / tw2));
+      ctx.font = `800 ${fs}px sans-serif`;
+    }
+  }
+  const tw = Math.max(...lines.map((l) => ctx.measureText(l).width));
   const pw = Math.min(tw + 36, W - 16);
+  const ph = lines.length > 1 ? 48 : 34;
   const py = 152 + slide;
   ctx.fillStyle = 'rgba(255,255,255,0.92)';
-  roundRect(W / 2 - pw / 2, py, pw, 34, 17);
+  roundRect(W / 2 - pw / 2, py, pw, ph, 17);
   ctx.fillStyle = color;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(text, W / 2, py + 17.5);
+  if (lines.length > 1) {
+    ctx.fillText(lines[0], W / 2, py + 15);
+    ctx.fillText(lines[1], W / 2, py + 33);
+  } else {
+    ctx.fillText(text, W / 2, py + 17.5);
+  }
   ctx.restore();
 }
 
@@ -993,6 +1084,7 @@ function newGame() {
   tut = localStorage.getItem('jump-tut-done')
     ? null
     : { move: false, spring: false, coin: false, star: false, mission: false };
+  if (ghostPts && state === State.COUNTDOWN) dexAdd('ghost'); // 내 기록과 경주
 
   // 얼음/바람/대포/무중력 초기화
   slipT = 0;
@@ -1034,6 +1126,7 @@ function newGame() {
   thunderCombo = 0;
   shieldCharges = shieldMax();
   boltFx = [];
+  trailFx = [];
 
   // 들고 들어가는 아이템: 판당 1개씩만 사용 (생명도 한 판에 1번!)
   lives = Math.min(inv.life, 1);
@@ -1206,6 +1299,7 @@ function tryAirJump() {
     });
   }
   addFloat('더블 점프!', player.x, player.y - 36, '#48c9e5', 13);
+  dexAdd('djump');
   return true;
 }
 
@@ -1317,6 +1411,7 @@ function bossDefeated() {
   score += 300; // 격파 보너스 점수
   runBosses++;
   dexAdd('bossmon');
+  if (boss.face >= 2) dexAdd('boss' + boss.face); // 진화 보스 도감
   missionFlash = 140;
   flashMain = '👹 보스 격파!';
   flashSub = `+${reward}🪙 +300점`;
@@ -1349,6 +1444,7 @@ function fireThunder() {
       stats.kills++;
       runKills++;
       dexAdd(t.kind);
+      dexAdd('bolt');
     }
   }
   saveStats();
@@ -1364,6 +1460,7 @@ function shieldBlock() {
   if (shieldCharges <= 0) return false;
   shieldCharges--;
   invincible = Math.max(invincible, 60);
+  dexAdd('shieldhit');
   addBurst(player.x, player.y, '#74b9ff');
   addFloat(shieldCharges > 0 ? `🛡️ 보호막! (${shieldCharges}회 남음)` : '🛡️ 보호막 소진!',
     player.x, player.y - 42, '#3f8efc', 14);
@@ -1495,6 +1592,7 @@ function playRps(mine) {
         standPlat = null;
         fireY = cameraY + H + 360;
         sfx.revive();
+        dexAdd('rpswin');
         addBurst(player.x, cameraY + H - 30, '#f6e58d');
         announce('✊✋✌️ 가위바위보 승리! 한 목숨 더! 🎉', '#e67e22');
       }, 900);
@@ -1528,6 +1626,7 @@ function update() {
   // 구간 이정표
   if (milestoneIdx < MILESTONES.length && score >= MILESTONES[milestoneIdx][0]) {
     announce(MILESTONES[milestoneIdx][1], '#2c3e50', 150);
+    if (MILESTONES[milestoneIdx][0] === 13500) dexAdd('grav'); // 우주 도달
     beep(760, 0.12, 'square', 0.12);
     setTimeout(() => beep(980, 0.16, 'square', 0.12), 130);
     milestoneIdx++;
@@ -1613,7 +1712,7 @@ function update() {
       });
     }
   } else {
-    player.vy += gravity;
+    player.vy += gravity * (curChar === 'owl' && player.vy > 0 ? 0.82 : 1); // 부엉이: 활공
   }
   if (!holdCannon && !standPlat) player.y += player.vy;
 
@@ -1682,6 +1781,7 @@ function update() {
             type: 'coin',
           });
           addBurst(p.x + p.w / 2, p.y - 10, '#ffd832');
+          dexAdd('gold');
         }
         // 미션 훅: 처음 밟는 발판인지 + 스프링 여부
         const fresh = !landedSet.has(p);
@@ -1818,6 +1918,7 @@ function update() {
         sfx.buy();
         addFloat(`💎 +${gv}🪙`, c.x, c.y - 14, '#9b59b6', 16);
         addBurst(c.x, c.y, '#a55eea');
+        dexAdd('gem');
         missionEvent('Coin');
       } else {
         const cv = coinValue(); // 높이 오를수록 코인 가치 상승 (10,000점당 +1)
@@ -2065,6 +2166,17 @@ function update() {
   for (const f of floatTexts) { f.life--; if (!f.screen) f.y -= 0.4; }
   floatTexts = floatTexts.filter((f) => f.life > 0);
 
+  // --- 발자국 꾸미기 (트레일 아이템) ---
+  const trailKind = wearing('trail_spark') ? 'spark'
+    : wearing('trail_bubble') ? 'bubble'
+    : wearing('trail_note') ? 'note' : null;
+  if (trailKind && frame % 5 === 0 && !holdCannon && !standPlat) {
+    trailFx.push({ x: player.x + rand(-6, 6), y: player.y + 16, life: 30, kind: trailKind, ph: rand(0, Math.PI * 2) });
+    if (trailFx.length > 24) trailFx.shift();
+  }
+  for (const tf of trailFx) { tf.life--; if (tf.kind === 'bubble') tf.y -= 0.5; }
+  trailFx = trailFx.filter((t) => t.life > 0);
+
   // --- 튜토리얼: 첫 미션 안내 ---
   if (tut && mission && !tut.mission) {
     tut.mission = true;
@@ -2153,7 +2265,7 @@ function update() {
   if (shootPose > 0) shootPose--;
 
   // ⚡ 낙뢰: 충전이 가득하고 화면에 적이 있으면 자동 발사 (없으면 충전 유지)
-  if (upg.thunder > 0 && thunderCombo >= thunderNeed() && frame % 8 === 0) {
+  if (upg.thunder > 0 && thunderCombo >= thunderNeed() && dying <= 0 && frame % 8 === 0) {
     if (fireThunder() > 0) {
       thunderCombo = 0;
       addFloat('⚡ 낙뢰!', player.x, player.y - 40, '#c78a00', 15);
@@ -2198,6 +2310,7 @@ function update() {
   // --- 불길: 같은 곳에 머물 수 없다! ---
   if (!fireOn && (score > 250 || frame > 540)) {
     fireOn = true;
+    dexAdd('fire');
     if (!fireAnnounced) {
       fireAnnounced = true;
       announce('🔥 아래에서 불길이 올라옵니다! 계속 위로!', '#e74c3c', 170);
@@ -3227,6 +3340,38 @@ const HEADR = 8.4;    // 머리 반지름
 
 // 등 뒤 아이템 (캐릭터보다 먼저 그림 — 등쪽에서 나옴)
 function drawAccessoriesBack() {
+  if (wearing('backpack')) {
+    // 책가방: 등에 멘 주황 가방
+    ctx.fillStyle = '#e17055';
+    roundRect(6, -6, 11, 14, 3.5);
+    ctx.strokeStyle = '#c44d3f';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(7.5, -3, 8, 4.5);
+    ctx.fillStyle = '#fdcb6e';
+    roundRect(8.5, 2.5, 6, 4, 1.6);
+  }
+  if (wearing('balloonpack')) {
+    // 풍선 3개: 둥실둥실 떠다님
+    const bob = Math.sin(frame * 0.07) * 1.5;
+    const cols = [['#ff6b81', 0], ['#ffd832', 3.2], ['#54a0ff', 6.4]];
+    for (const [col, dx] of cols) {
+      const bx = 7 + dx, by = -19 + bob + (dx === 3.2 ? -3.5 : 0);
+      ctx.strokeStyle = 'rgba(120, 120, 130, 0.7)';
+      ctx.lineWidth = 0.7;
+      ctx.beginPath();
+      ctx.moveTo(bx, by + 4.5);
+      ctx.quadraticCurveTo(bx - 1, by + 12, 8, 2);
+      ctx.stroke();
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.ellipse(bx, by, 3.2, 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      ctx.beginPath();
+      ctx.ellipse(bx - 1, by - 1.3, 1, 1.4, -0.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
   if (wearing('wings')) {
     // 천사 날개: 등(오른쪽 뒤)에서 위로 펼쳐져 팔랑임
     const f = Math.sin(frame * 0.22) * 2.5;
@@ -3380,6 +3525,209 @@ function drawAccessoriesFront() {
     roundRect(-7.5, 3.5, 4, 8, 2);
     ctx.fillStyle = '#e67e22';
     roundRect(-7, 9.5, 3, 2.4, 1.2); // 자락 끝단
+  }
+  if (wearing('partyhat')) {
+    // 고깔모자: 물방울무늬 + 폼폼
+    const by = HEADY - HEADR + 1;
+    ctx.fillStyle = '#f78fb3';
+    ctx.beginPath();
+    ctx.moveTo(HEADX - 5.5, by);
+    ctx.lineTo(HEADX, by - 11);
+    ctx.lineTo(HEADX + 5.5, by);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#e05c8a';
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+    ctx.fillStyle = '#ffd832';
+    for (const [dx, dy] of [[-1.6, -3], [1.8, -5.5], [-0.4, -7.5]]) {
+      ctx.beginPath();
+      ctx.arc(HEADX + dx, by + dy, 0.9, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.arc(HEADX, by - 11.5, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (wearing('beret')) {
+    // 화가 베레모: 살짝 기울여 얹음
+    ctx.fillStyle = '#5f27cd';
+    ctx.beginPath();
+    ctx.ellipse(HEADX + 1, HEADY - HEADR + 0.6, 8, 3.4, -0.12, Math.PI, 0);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(HEADX + 1, HEADY - HEADR - 2, 6.2, 2.4, -0.12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#341f97';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(HEADX + 1, HEADY - HEADR - 4);
+    ctx.lineTo(HEADX + 2.2, HEADY - HEADR - 6);
+    ctx.stroke();
+  }
+  if (wearing('bunnyears')) {
+    // 토끼 귀 머리띠
+    for (const dx of [-4.5, 2.5]) {
+      const bx = HEADX + dx, by = HEADY - HEADR + 1;
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = '#d8d0e0';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.ellipse(bx, by - 7.5, 2.6, 7.5, dx * 0.03, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#fbb1c8';
+      ctx.beginPath();
+      ctx.ellipse(bx, by - 7, 1.2, 5, dx * 0.03, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  if (wearing('propeller')) {
+    // 프로펠러 모자: 날개가 빙글빙글
+    ctx.fillStyle = '#48c9e5';
+    ctx.beginPath();
+    ctx.arc(HEADX, HEADY - 2.5, HEADR * 0.92, Math.PI, 0);
+    ctx.fill();
+    ctx.strokeStyle = '#2f9ab8';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(HEADX, HEADY - HEADR - 0.5);
+    ctx.lineTo(HEADX, HEADY - HEADR - 3);
+    ctx.stroke();
+    const sp = Math.sin(frame * 0.45);
+    ctx.fillStyle = '#e74c3c';
+    ctx.beginPath();
+    ctx.ellipse(HEADX, HEADY - HEADR - 3.8, Math.abs(sp) * 6 + 1.5, 1.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#f6b93b';
+    ctx.beginPath();
+    ctx.arc(HEADX, HEADY - HEADR - 3.8, 1.1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (wearing('viking')) {
+    // 바이킹 투구: 은빛 돔 + 양쪽 뿔
+    ctx.fillStyle = '#f5e8d0';
+    ctx.strokeStyle = '#cbb894';
+    ctx.lineWidth = 0.8;
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(HEADX + s * (HEADR - 2), HEADY - 4);
+      ctx.quadraticCurveTo(HEADX + s * (HEADR + 4.5), HEADY - 8, HEADX + s * (HEADR + 2), HEADY - 13.5);
+      ctx.lineTo(HEADX + s * (HEADR - 3.5), HEADY - 6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#95a5a6';
+    ctx.beginPath();
+    ctx.arc(HEADX, HEADY - 2, HEADR * 0.98, Math.PI, 0);
+    ctx.fill();
+    ctx.strokeStyle = '#707b7c';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(HEADX - HEADR + 1, HEADY - 2.5);
+    ctx.lineTo(HEADX + HEADR - 1, HEADY - 2.5);
+    ctx.stroke();
+  }
+  if (wearing('halo')) {
+    // 천사 링: 머리 위에 둥실
+    const hy = HEADY - HEADR - 4.5 + Math.sin(frame * 0.08) * 0.8;
+    ctx.strokeStyle = '#ffd832';
+    ctx.lineWidth = 1.8;
+    ctx.shadowColor = 'rgba(255, 216, 50, 0.8)';
+    ctx.shadowBlur = 4;
+    ctx.beginPath();
+    ctx.ellipse(HEADX, hy, 6, 2, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+  if (wearing('monocle')) {
+    // 신사 외눈 안경 + 금줄
+    const ex = -13.5, ey = -6.5;
+    ctx.fillStyle = 'rgba(200, 230, 255, 0.25)';
+    ctx.strokeStyle = '#c9a227';
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.arc(ex, ey, 3.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(ex + 2, ey + 3.2);
+    ctx.quadraticCurveTo(ex + 4.5, ey + 6.5, ex + 4, ey + 10);
+    ctx.stroke();
+  }
+  if (wearing('heartglasses')) {
+    // 하트 안경 (사이드뷰 렌즈 하나)
+    const ex = -13.5, ey = -6.5;
+    ctx.fillStyle = 'rgba(253, 121, 168, 0.9)';
+    ctx.strokeStyle = '#e84393';
+    ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(ex, ey + 3.8);
+    ctx.bezierCurveTo(ex - 5.5, ey - 1, ex - 3.5, ey - 5.8, ex, ey - 2.2);
+    ctx.bezierCurveTo(ex + 3.5, ey - 5.8, ex + 5.5, ey - 1, ex, ey + 3.8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(ex + 3.5, ey - 1);
+    ctx.lineTo(HEADX + 6, HEADY - 1.5);
+    ctx.stroke();
+  }
+  if (wearing('mustache')) {
+    // 멋쟁이 콧수염 (주둥이 끝)
+    ctx.strokeStyle = '#4a3728';
+    ctx.lineWidth = 1.8;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-17.5, 0.5);
+    ctx.quadraticCurveTo(-14, -1.5, -11.5, 0.2);
+    ctx.moveTo(-17.5, 0.5);
+    ctx.quadraticCurveTo(-20.5, -0.8, -22, -2.4);
+    ctx.stroke();
+    ctx.lineCap = 'butt';
+  }
+  if (wearing('bowtie')) {
+    // 나비넥타이
+    ctx.save();
+    ctx.translate(-4, 3.5);
+    ctx.fillStyle = '#e74c3c';
+    ctx.strokeStyle = '#b03a2e';
+    ctx.lineWidth = 0.7;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-5, -3.2);
+    ctx.lineTo(-5, 3.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(5, -3.2);
+    ctx.lineTo(5, 3.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#c0392b';
+    ctx.beginPath();
+    ctx.arc(0, 0, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  if (wearing('pearl')) {
+    // 진주 목걸이
+    ctx.fillStyle = '#fdfefe';
+    ctx.strokeStyle = 'rgba(175, 175, 192, 0.85)';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i < 7; i++) {
+      const t = i / 6;
+      const px = -10.5 + t * 13;
+      const py = 2 + Math.sin(t * Math.PI) * 3.6;
+      ctx.beginPath();
+      ctx.arc(px, py, 1.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
   }
 }
 
@@ -3675,6 +4023,42 @@ function draw() {
   }
   ctx.globalAlpha = 1;
 
+  // 트레일 꾸미기
+  for (const tf of trailFx) {
+    const ta = clamp(tf.life / 30, 0, 1);
+    const ty2 = tf.y - cameraY;
+    ctx.save();
+    ctx.globalAlpha = ta * 0.9;
+    if (tf.kind === 'spark') {
+      ctx.fillStyle = '#ffd832';
+      ctx.translate(tf.x, ty2);
+      ctx.rotate(tf.ph + frame * 0.05);
+      ctx.beginPath();
+      for (let i = 0; i < 8; i++) {
+        const rr = i % 2 === 0 ? 4.5 : 1.8;
+        const an = (Math.PI / 4) * i;
+        ctx.lineTo(Math.cos(an) * rr, Math.sin(an) * rr);
+      }
+      ctx.closePath();
+      ctx.fill();
+    } else if (tf.kind === 'bubble') {
+      ctx.strokeStyle = 'rgba(140, 205, 255, 0.9)';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(tf.x, ty2, 4 + Math.sin(tf.ph) * 1.5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.beginPath();
+      ctx.arc(tf.x - 1.5, ty2 - 1.5, 1.1, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.font = '10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(tf.ph > Math.PI ? '🎵' : '🎶', tf.x, ty2);
+    }
+    ctx.restore();
+  }
+
   drawPlayer();
   drawSeason();
   drawWeather();
@@ -3686,13 +4070,15 @@ function draw() {
     ctx.save();
     ctx.globalAlpha = clamp(f.life / 40, 0, 1);
     ctx.font = `900 ${f.size}px sans-serif`;
+    const halfW = ctx.measureText(f.text).width / 2;
+    const fx = clamp(f.x, halfW + 4, W - halfW - 4); // 화면 밖 짤림 방지
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.strokeStyle = 'rgba(255,255,255,0.9)';
     ctx.lineWidth = 4;
-    ctx.strokeText(f.text, f.x, fy);
+    ctx.strokeText(f.text, fx, fy);
     ctx.fillStyle = f.color;
-    ctx.fillText(f.text, f.x, fy);
+    ctx.fillText(f.text, fx, fy);
     ctx.restore();
   }
 
@@ -4048,7 +4434,7 @@ function refreshShop() {
   $('own-life').textContent = String(inv.life);
   $('own-rocket').textContent = String(inv.rocket);
   $('own-magnet').textContent = String(inv.magnet);
-  document.querySelectorAll('.btn-buy').forEach((btn) => {
+  document.querySelectorAll('#shop-screen .btn-buy').forEach((btn) => {
     const item = btn.dataset.item;
     btn.classList.remove('equipped');
     if (COSMETICS.includes(item)) {
@@ -4094,6 +4480,7 @@ function buyItem(item) {
   if (COSMETICS.includes(item)) wearCosmetic(item, true);
   saveWallet();
   saveInv();
+  checkAchievements(); // 패션 도전과제
   sfx.buy();
   refreshShop();
 }
@@ -4139,6 +4526,7 @@ function renderUpgrades() {
       upg[key]++;
       saveWallet();
       saveUpg();
+      checkAchievements(); // 강화 도전과제
       sfx.buy();
       if (def.perks && def.perks[upg[key]]) showUpgToast(def.perks[upg[key]]); // 마일스톤 도달!
       renderUpgrades();
@@ -4175,6 +4563,7 @@ function renderChars() {
       curChar = id;
       saveChars();
       loadCharImages();
+      checkAchievements(); // 캐릭터 수집 도전과제
       sfx.buy();
       renderChars();
     });
@@ -4186,6 +4575,10 @@ function renderChars() {
 const COSMETIC_NAMES = {
   bow: '🎀 리본', hat: '🧢 빨간 모자', headphones: '🎧 헤드폰', tophat: '🎩 마술사 모자',
   crown: '👑 왕관', glasses: '😎 선글라스', scarf: '🧣 목도리', cape: '🦸 빨간 망토', wings: '🪽 천사 날개',
+  partyhat: '🥳 고깔모자', beret: '🎨 베레모', bunnyears: '🐰 토끼 귀 머리띠', propeller: '🚁 프로펠러 모자',
+  viking: '⚔️ 바이킹 투구', halo: '😇 천사 링', monocle: '🧐 외눈 안경', heartglasses: '😍 하트 안경',
+  mustache: '🥸 콧수염', bowtie: '🤵 나비넥타이', pearl: '📿 진주 목걸이', backpack: '🎒 책가방',
+  balloonpack: '🎈 풍선 세트', trail_spark: '✨ 반짝이 발자국', trail_bubble: '🫧 비눗방울 발자국', trail_note: '🎵 음표 발자국',
 };
 let meTimer = null;
 
@@ -4450,6 +4843,7 @@ function gameOver() {
   }
   if (tut) localStorage.setItem('jump-tut-done', '1');
   stats.runs++;
+  if (dailyMode) stats.dailyRuns = (stats.dailyRuns || 0) + 1;
   stats.totalScore += score;
   if (score > stats.bestScore) stats.bestScore = score;
   if (score >= 14000) stats.space = true;
