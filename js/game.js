@@ -444,6 +444,7 @@ const MISSION_DEFS = [
     id: 'rush', minScore: 0, text: '15초 안에 700점 오르기',
     init: () => ({ t: 900, base: null, ok: false }),
     tick(s) {
+      if (boss) return; // 보스전 중엔 타이머 정지
       if (s.base === null) s.base = score;
       s.t--;
       if (score - s.base >= 700) s.ok = true;
@@ -511,8 +512,12 @@ function completeMission() {
   flashMain = '미션 성공!';
   flashSub = '🚀 보너스 타임!';
   missionCooldown = 420;
-  jetpackTimer = Math.max(jetpackTimer, 0) + BONUS_JETPACK;
-  jetpackSlow = false;
+  if (boss) {
+    flashSub = '🛡️ 무적 보너스!'; // 보스전 중엔 비행 대신 무적
+  } else {
+    jetpackTimer = Math.max(jetpackTimer, 0) + BONUS_JETPACK;
+    jetpackSlow = false;
+  }
   invincible = Math.max(invincible, BONUS_INVINCIBLE);
   sfx.bonus();
   vib(80);
@@ -527,9 +532,13 @@ function starPower() {
   starCount = 0;
   missionFlash = 140;
   flashMain = '⭐ 스타 파워!';
-  flashSub = '무적 비행!';
-  jetpackTimer = Math.max(jetpackTimer, 0) + STAR_FLIGHT;
-  jetpackSlow = false;
+  if (boss) {
+    flashSub = '🛡️ 무적!';
+  } else {
+    flashSub = '무적 비행!';
+    jetpackTimer = Math.max(jetpackTimer, 0) + STAR_FLIGHT;
+    jetpackSlow = false;
+  }
   invincible = Math.max(invincible, STAR_FLIGHT + 60);
   sfx.bonus();
   vib(80);
@@ -663,8 +672,8 @@ const SEASON = (() => {
   return 'winter';
 })();
 
-function addFloat(text, x, y, color = '#e67e22', size = 16, screen = false) {
-  floatTexts.push({ text, x, y, color, size, life: 110, screen });
+function addFloat(text, x, y, color = '#e67e22', size = 16, screen = false, life = 110) {
+  floatTexts.push({ text, x, y, color, size, life, screen });
 }
 
 // ---------- 입력 ----------
@@ -1390,7 +1399,7 @@ function update() {
       windState = null;
       windWait = Math.round(rand(900, 2000));
     }
-  } else if (score > 2500 && score < 13500) {
+  } else if (score > 2500 && score < 13500 && !boss) {
     if (--windWait <= 0) {
       windState = { dir: Math.random() < 0.5 ? -1 : 1, warnT: 90, t: 430 };
       sfx.break();
@@ -1466,6 +1475,9 @@ function update() {
     platforms.push(floor);
     monsters = []; // 아레나에선 보스에게 집중
     bossShots = [];
+    reversedT = 0;      // 조작 반전 해제
+    windState = null;   // 바람 종료
+    weatherDrops = weatherDrops.slice(0, 40);
     // 부스터/제트팩을 타고 왔다면 비행을 끝내고 바로 낙하 → 전투 시작!
     if (jetpackTimer > 0) {
       jetpackTimer = 0;
@@ -3388,7 +3400,7 @@ function beginCountdown() {
   updateFireBtn();
   photoMode = false;
   bgm.start();
-  if (tut) addFloat('좌우로 움직여 발판을 밟아요!', W / 2, 190, '#2c3e50', 16, true);
+  if (tut) addFloat('좌우로 움직여 발판을 밟아요!', W / 2, 190, '#2c3e50', 16, true, 380);
 }
 
 function showHelp() {
@@ -3454,6 +3466,7 @@ function goHome() {
   pauseBtn.classList.add('hidden');
   fireBtn.classList.add('hidden');
   startScreen.classList.remove('hidden');
+  newGame(); // 메뉴 배경을 새 장면으로 (state가 MENU라 아이템 소비 없음)
   refreshMenu();
 }
 
