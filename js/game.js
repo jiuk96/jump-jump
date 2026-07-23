@@ -275,7 +275,7 @@ const ACHIEVEMENTS = [
   { id: 'runs50', name: '끈기의 둥이', desc: '50판 플레이', target: 50, get: (s) => s.runs, reward: 150 },
   { id: 'total100k', name: '마라토너', desc: '누적 100,000점 오르기', target: 100000, get: (s) => s.totalScore, reward: 300 },
   { id: 'revive3', name: '불사조', desc: '생명으로 3회 부활', target: 3, get: (s) => s.revives, reward: 100 },
-  { id: 'moon', name: '달 정복자', desc: '달에 착륙하기 (30,000점)', target: 1, get: (s) => (s.moon ? 1 : 0), reward: 500 },
+  { id: 'moon', name: '달 정복자', desc: '달에 착륙하기 (60,000점)', target: 1, get: (s) => (s.moon ? 1 : 0), reward: 500 },
   { id: 'score20k', name: '별바다 항해사', desc: '한 판에 20,000점 달성', target: 20000, get: (s) => s.bestScore, reward: 300 },
   { id: 'score25k', name: '중력을 거부한 자', desc: '한 판에 25,000점 달성', target: 25000, get: (s) => s.bestScore, reward: 400 },
   { id: 'coins2k', name: '알뜰한 저금왕', desc: '코인 누적 2,000개 모으기', target: 2000, get: (s) => s.coins, reward: 300 },
@@ -863,9 +863,12 @@ const MILESTONES = [
   [8500, '🌤️ 성층권 진입!'],
   [13500, '🌌 우주 도달! 무중력 구간!'],
   [22000, '🪐 별들의 바다!'],
-  [26000, '🌕 달이 보인다!'],
+  [30000, '🌠 은하수 횡단 중!'],
+  [40000, '🛰️ 달 궤도 진입!'],
+  [50000, '☄️ 혜성과 나란히!'],
+  [56000, '🌕 달이 보인다!'],
 ];
-const MOON_SCORE = 30000;
+const MOON_SCORE = 60000;
 const AMMO_MAX = 10;
 const RELOAD_TIME = 95; // 약 1.6초
 let bossShots;         // 보스 투사체
