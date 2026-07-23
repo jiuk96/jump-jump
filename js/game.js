@@ -81,6 +81,7 @@ function kstDateNum() { // 한국 시간 기준 오늘 날짜 (YYYYMMDD)
 let settings = { sfx: true, music: true, vib: true, tilt: 'mid', lefty: false };
 // 🔑 운영자(치트) 상태 — 설정 화면 초기화보다 먼저 선언되어야 함
 let masterMode = localStorage.getItem('jump-master') === '1';
+let opMode = localStorage.getItem('jump-op-mode') === '1'; // 🕹️ 운영자 샌드박스 모드
 let cheatGod = false;       // 무적 (세션 한정)
 let cheatStartScore = 0;    // 시작 점수 (세션 한정)
 try { Object.assign(settings, JSON.parse(localStorage.getItem('jump-settings') || '{}')); } catch (e) {}
@@ -462,6 +463,7 @@ function cloudSnapshot() {
 }
 
 async function cloudSync(force = false) {
+  if (opMode) return false; // 🕹️ 운영자 모드: 샌드박스 데이터로 실계정 백업을 덮지 않음
   const keys = cloudSnapshot();
   const hash = JSON.stringify(keys);
   if (!force && hash === cloud.lastHash) return false; // 변경 없으면 전송 안 함
@@ -573,6 +575,7 @@ async function autoSubmitScore(sc = score, modeStr) {
   const regBtn = $('btn-register');
   el.textContent = '';
   regBtn.classList.add('hidden');
+  if (opMode) { el.textContent = '🕹️ 운영자 모드 — 랭킹에 등록되지 않습니다'; return; }
   if (sc < 100) return; // 너무 낮은 기록은 등록하지 않음
   if (!myName) {
     regBtn.classList.remove('hidden');
@@ -4651,6 +4654,8 @@ function refreshMenu() {
   }
   const sc2 = $('series-count');
   if (sc2) sc2.textContent = `🎮 시리즈 ${stats.moon ? 2 : 1} / 3 해금`;
+  const ob = $('op-badge');
+  if (ob) ob.classList.toggle('hidden', !opMode);
   $('title-sub').textContent = title ? `🎖️ ${title}` : '하늘 끝까지 올라가 보세요';
 }
 
@@ -4894,6 +4899,7 @@ function renderMe() {
   } else {
     let cloudLabel = { ok: '✅ 연동됨', off: '⚠️ 서버 설정 대기', err: '⚠️ 연결 오류', init: '⏳ 연결 중...' }[cloud.status] || '-';
     if (cloud.lastErr && cloud.status !== 'ok') cloudLabel += ` (${String(cloud.lastErr).slice(0, 40)})`;
+    if (opMode) cloudLabel = '🕹️ 운영자 모드 (백업 일시중지)';
     const lastSync = cloud.lastSyncAt ? new Date(cloud.lastSyncAt).toLocaleTimeString('ko-KR') : '아직 없음';
     $('me-info').innerHTML = `<div class="me-section"><h3>☁️ 계정 백업</h3>
       <div class="me-row"><span>상태</span><b>${cloudLabel}</b></div>
@@ -4969,6 +4975,8 @@ function refreshSettingsUI() {
   ];
   for (const [id, on] of map) $(id).classList.toggle('active', on);
   $('master-panel').classList.toggle('hidden', !masterMode);
+  $('mp-op').textContent = `🕹️ 운영자 모드: ${opMode ? 'ON' : 'OFF'}`;
+  $('mp-op').classList.toggle('on', opMode);
   refreshControlUI();
 }
 
@@ -5926,6 +5934,57 @@ function mpStatus(msg) {
   setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 2200);
 }
 
+// 🕹️ 운영자 샌드박스: 켜면 실계정 보관 + 전부 해금, 끄면 원상 복귀
+const OP_KEYS = [...CLOUD_KEYS, 'jump-ghost'];
+
+function enterOpMode() {
+  if (opMode) return;
+  // 1) 실계정 데이터 보관
+  const snap = {};
+  for (const k of OP_KEYS) {
+    const v = localStorage.getItem(k);
+    if (v !== null) snap[k] = v;
+  }
+  localStorage.setItem('jump-op-backup', JSON.stringify(snap));
+  localStorage.setItem('jump-op-mode', '1');
+  // 2) 샌드박스 풀해금 상태 기록
+  localStorage.setItem('jump-coins', '999999');
+  const maxUpg = {};
+  for (const k of Object.keys(UPGRADES)) maxUpg[k] = UPGRADES[k].max;
+  localStorage.setItem('jump-upg', JSON.stringify(maxUpg));
+  localStorage.setItem('jump-chars', JSON.stringify(Object.keys(CHARACTERS)));
+  const allInv = { life: 3, rocket: 9, magnet: 9 };
+  for (const k of COSMETICS) allInv[k] = 1;
+  localStorage.setItem('jump-inv', JSON.stringify(allInv));
+  localStorage.setItem('jump-dex', JSON.stringify(Object.keys(DEX)));
+  const dn = {};
+  for (const [id, d] of Object.entries(DEX)) dn[id] = d[2];
+  localStorage.setItem('jump-dexn', JSON.stringify(dn));
+  localStorage.setItem('jump-ach', JSON.stringify(ACHIEVEMENTS.map((a) => a.id)));
+  const st = Object.assign({}, stats, { moon: true });
+  localStorage.setItem('jump-stats', JSON.stringify(st));
+  location.reload(); // 깨끗하게 재시작
+}
+
+function exitOpMode() {
+  if (!opMode) return;
+  let snap = {};
+  try { snap = JSON.parse(localStorage.getItem('jump-op-backup') || '{}'); } catch (e) {}
+  for (const k of OP_KEYS) localStorage.removeItem(k); // 샌드박스 흔적 제거
+  for (const [k, v] of Object.entries(snap)) localStorage.setItem(k, v); // 내 계정 복귀
+  localStorage.removeItem('jump-op-mode');
+  localStorage.removeItem('jump-op-backup');
+  location.reload();
+}
+
+$('mp-op').addEventListener('click', () => {
+  if (!opMode) {
+    if (confirm('🕹️ 운영자 모드를 켤까요?\n\n· 모든 캐릭터·아이템·강화·도감이 해금된 테스트 상태가 됩니다\n· 현재 내 계정 데이터는 안전하게 보관됩니다\n· 켜져 있는 동안 클라우드 백업·랭킹 등록은 중단됩니다\n· 끄면 내 계정 그대로 돌아옵니다')) enterOpMode();
+  } else {
+    if (confirm('운영자 모드를 끄고 내 계정으로 돌아갈까요?\n(샌드박스에서 바꾼 내용은 사라집니다)')) exitOpMode();
+  }
+});
+
 $('btn-cheat').addEventListener('click', () => {
   const code = $('cheat-input').value.trim().toLowerCase();
   $('cheat-input').value = '';
@@ -6011,7 +6070,7 @@ $('mp-reset').addEventListener('click', () => {
 });
 
 // ---------- 버전 표시 & 최신 버전 유도 ----------
-const GAME_VERSION = 57; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
+const GAME_VERSION = 58; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
 const verLabel = $('version-label');
 function setVerLabel(txt, cls) {
   if (!verLabel) return;
