@@ -33,8 +33,8 @@ const MAGNET_RANGE = 110;      // 자석 흡인 범위
 const REVIVE_INVINCIBLE = 180; // 부활 후 무적 프레임
 const PRICES = {
   life: 150, rocket: 50, magnet: 75,
-  bow: 200, hat: 300, glasses: 400, headphones: 450,
-  tophat: 500, crown: 600, scarf: 250, cape: 700, wings: 800,
+  bow: 800, scarf: 1000, hat: 1200, glasses: 1500, headphones: 1800,
+  tophat: 2200, crown: 3000, cape: 3500, wings: 5000,
 };
 const MAX_OWN = {
   life: 3, rocket: 9, magnet: 9,
@@ -964,8 +964,8 @@ function newGame() {
   fireOn = false;
   fireAnnounced = false;
 
-  // 들고 들어가는 아이템: 생명은 보유분 그대로, 로켓/자석은 있으면 1개 자동 사용
-  lives = inv.life;
+  // 들고 들어가는 아이템: 판당 1개씩만 사용 (생명도 한 판에 1번!)
+  lives = Math.min(inv.life, 1);
   magnetActive = false;
   if (state === State.COUNTDOWN) { // 메뉴 배경용 초기화 때는 소비하지 않음
     if (inv.rocket > 0) {
@@ -1253,7 +1253,7 @@ function tryRevive() {
   }
   if (lives > 0) {
     lives--;
-    inv.life = lives;
+    inv.life = Math.max(0, inv.life - 1); // 보유분에서 1개만 차감
     saveInv();
     // 화면 아래에서 크게 튀어오르며 부활 + 잠시 무적
     player.x = clamp(player.x, 30, W - 30);
@@ -3778,12 +3778,12 @@ function refreshShop() {
         btn.classList.toggle('equipped', equip[item]);
       } else {
         btn.disabled = wallet < PRICES[item];
-        btn.textContent = `🪙 ${PRICES[item]}`;
+        btn.textContent = `🪙 ${PRICES[item].toLocaleString()}`;
       }
       return;
     }
     btn.disabled = wallet < PRICES[item] || inv[item] >= MAX_OWN[item];
-    btn.textContent = inv[item] >= MAX_OWN[item] ? '최대 보유' : `🪙 ${PRICES[item]}`;
+    btn.textContent = inv[item] >= MAX_OWN[item] ? '최대 보유' : `🪙 ${PRICES[item].toLocaleString()}`;
   });
 }
 
