@@ -93,12 +93,12 @@ resize();
 // ---------- 캐릭터 (코인으로 해금, 고유 능력) ----------
 const CHARACTERS = {
   dungi: { name: '둥이', emoji: '🐶', price: 0, desc: '밸런스형 말티즈', dir: '' },
-  rabbit: { name: '토실이', emoji: '🐰', price: 3000, desc: '점프력 +10%', dir: 'rabbit/' },
-  penguin: { name: '펭펭', emoji: '🐧', price: 4000, desc: '얼음에서 안 미끄러움 · 코인 +10%', dir: 'penguin/' },
-  cat: { name: '나비', emoji: '🐱', price: 5000, desc: '한 판에 한 번 낙사 무시', dir: 'cat/' },
+  rabbit: { name: '토실이', emoji: '🐰', price: 0, desc: '점프력 +10%', dir: 'rabbit/' },
+  penguin: { name: '펭펭', emoji: '🐧', price: 0, desc: '얼음에서 안 미끄러움 · 코인 +10%', dir: 'penguin/' },
+  cat: { name: '나비', emoji: '🐱', price: 0, desc: '한 판에 한 번 낙사 무시', dir: 'cat/' },
 };
-let ownedChars = new Set(['dungi']);
-try { JSON.parse(localStorage.getItem('jump-chars') || '[]').forEach((c) => ownedChars.add(c)); } catch (e) {}
+// 지금은 모든 캐릭터 무료 개방
+let ownedChars = new Set(Object.keys(CHARACTERS));
 let curChar = localStorage.getItem('jump-char') || 'dungi';
 if (!CHARACTERS[curChar]) curChar = 'dungi';
 function saveChars() {
