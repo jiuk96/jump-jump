@@ -1,6 +1,6 @@
 // 서비스 워커: 오프라인 플레이 지원
 // 게임 파일을 수정하면 CACHE_VERSION을 올려야 사용자에게 새 버전이 전달됩니다.
-const CACHE_VERSION = 'jump-v64';
+const CACHE_VERSION = 'jump-v65';
 const ASSETS = [
   '.',
   'index.html',
