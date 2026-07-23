@@ -1086,6 +1086,7 @@ function update() {
   if (player.vy > 0 && jetpackTimer <= 0 && !standPlat) {
     for (const p of platforms) {
       if (p.broken) continue;
+      if (boss && !p.arena) continue; // 보스전: 일반 발판은 잠시 사라짐
       const px = player.x, pb = player.y + player.h / 2;
       if (px > p.x - 8 && px < p.x + p.w + 8 &&
           pb > p.y && pb < p.y + p.h + player.vy + 1) {
@@ -1264,8 +1265,9 @@ function update() {
   // --- 날씨 (비/눈) ---
   updateWeather();
 
-  // --- 블랙홀: 근처에 가면 빨려들어감 ---
+  // --- 블랙홀: 근처에 가면 빨려들어감 (보스전 중 비활성) ---
   for (const bh of blackholes) {
+    if (boss) break;
     bh.spin += 0.06;
     const dx = bh.x - player.x, dy = bh.y - player.y;
     const dist = Math.hypot(dx, dy);
@@ -1282,8 +1284,9 @@ function update() {
   }
   blackholes = blackholes.filter((b) => b.y < cameraY + H + 80);
 
-  // --- 어지러움 구름 ---
+  // --- 어지러움 구름 (보스전 중 비활성) ---
   for (const dc of dizzyClouds) {
+    if (boss) break;
     if (dc.used) continue;
     if (Math.abs(player.x - dc.x) < dc.w / 2 + 10 && Math.abs(player.y - dc.y) < dc.h / 2 + 14) {
       dc.used = true;
@@ -1299,7 +1302,7 @@ function update() {
   for (const cn of cannons) {
     if (!cn.fired && holdCannon !== cn) cn.osc += 0.02; // 대기 중에도 살짝 흔들
   }
-  if (!holdCannon) {
+  if (!holdCannon && !boss) {
     for (const cn of cannons) {
       if (cn.fired) continue;
       if (player.vy > 0 && Math.hypot(player.x - cn.x, player.y - cn.y) < 28) {
@@ -1387,19 +1390,16 @@ function update() {
       wobble: 0,
     };
     nextBossAt += 5000;
-    // 보스 아레나: 카메라가 멈추고 전용 발판이 생김 — 패턴을 피하며 싸운다!
-    const mkArena = (x, ay, w) => {
-      const p = makePlatform(x, ay, PlatType.NORMAL);
-      p.x = x; p.w = w; p.baseW = w;
-      p.pulse = false; p.spring = false; p.jetpack = false;
-      p.arena = true;
-      platforms.push(p);
-    };
-    mkArena(28, cameraY + 565, 104);
-    mkArena(228, cameraY + 565, 104);
-    mkArena(56, cameraY + 445, 92);
-    mkArena(212, cameraY + 445, 92);
-    mkArena(123, cameraY + 335, 114);
+    // 보스 아레나: 일반 발판은 잠시 사라지고, 화면 전체를 덮는 일자 땅이 생긴다
+    const floor = makePlatform(0, cameraY + 568, PlatType.NORMAL);
+    floor.x = 0;
+    floor.w = W;
+    floor.baseW = W;
+    floor.pulse = false;
+    floor.spring = false;
+    floor.jetpack = false;
+    floor.arena = true;
+    platforms.push(floor);
     monsters = []; // 아레나에선 보스에게 집중
     bossShots = [];
     addFloat('👹 보스전! 좌우로 피하고 🔫 버튼으로 공격!', W / 2, 190, '#c0392b', 16, true);
@@ -1783,6 +1783,7 @@ function lerpColor(a, b, t) {
 }
 
 function drawPlatform(p) {
+  if (boss && !p.arena) return; // 보스전 중 일반 발판 숨김
   const y = p.y - cameraY;
   ctx.save();
   if (p.broken && p.type === PlatType.BREAKING) {
@@ -2828,9 +2829,11 @@ function draw() {
   }
 
   drawGhost();
-  for (const bh of blackholes) drawBlackhole(bh);
-  for (const dc of dizzyClouds) drawDizzyCloud(dc);
-  for (const cn of cannons) drawCannon(cn);
+  if (!boss) {
+    for (const bh of blackholes) drawBlackhole(bh);
+    for (const dc of dizzyClouds) drawDizzyCloud(dc);
+    for (const cn of cannons) drawCannon(cn);
+  }
   for (const p of platforms) drawPlatform(p);
   for (const c of coinsArr) drawCoin(c);
   for (const m of monsters) drawMonster(m);
