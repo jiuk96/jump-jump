@@ -5974,7 +5974,7 @@ function initRunner() {
     obstacles: [], pickups: [], gaps: [], craters: [],
     spawnT: 90, gapSafe: 0, starT: 0, hinted: false,
     vw: 640, rings: [], ship: null, clearT: 0,
-    lastCls: [], lastExt: 0, lastSpawnF: -999,
+    lastCls: [], lastExt: 0, lastSpawnF: -999, coyote: 0, pitFall: false,
     stars: Array.from({ length: 60 }, () => ({
       x: Math.random() * 800, y: Math.random() * (R_GROUND - 60),
       r: Math.random() * 1.4 + 0.5, tw: Math.random() * Math.PI * 2, layer: Math.random() < 0.5 ? 0.15 : 0.4,
@@ -6002,7 +6002,7 @@ function runnerJump() {
 }
 
 function runnerOverGap() {
-  return R.gaps.some((g) => R_PX - 8 > g.x && R_PX + 8 < g.x + g.w);
+  return R.gaps.some((g) => R_PX - 5 > g.x && R_PX + 5 < g.x + g.w);
 }
 
 function runnerHit(kind) {
@@ -6018,6 +6018,9 @@ function runnerHit(kind) {
     R.py = R_GROUND - 150;
     R.vy = 0;
     R.jumps = 2;
+    R.pitFall = false;
+    R.coyote = 0;
+    R.gaps = R.gaps.filter((g) => g.x > R_PX + 160); // 같은 구덩이에 연속으로 빠지지 않게 발밑 정리
   }
   if (R.hearts <= 0) runnerOver();
 }
@@ -6224,12 +6227,22 @@ function updateRunner() {
 
   // --- 플레이어 물리 ---
   const overGap = runnerOverGap();
-  const onGround = !overGap && R.py >= R_GROUND - 0.5 && R.vy >= 0;
+  const onGround = (!overGap || R.coyote > 0) && R.py >= R_GROUND - 0.5 && R.vy >= 0 && !R.pitFall;
   R.sliding = R.slideHeld && onGround;
-  R.vy += 0.62;
-  R.py += R.vy;
-  // 지면 착지 (이미 구덩이 깊이 빠졌으면 스냅백 금지 — 끝까지 추락)
-  if (!overGap && R.vy >= 0 && R.py >= R_GROUND && R.py <= R_GROUND + 14) {
+  if (!overGap && R.py >= R_GROUND - 0.5 && R.vy >= 0) R.coyote = 8; // 지면 → 코요테 충전
+  if (overGap && R.coyote > 0 && R.py >= R_GROUND - 0.5 && R.vy >= 0 && !R.pitFall) {
+    // 🪂 코요테 타임: 가장자리를 살짝 지나쳐도 잠깐은 버팀 (늦은 점프 기회)
+    R.coyote--;
+    R.py = R_GROUND;
+    R.vy = 0;
+    R.jumps = 2;
+  } else {
+    R.vy += 0.62;
+    R.py += R.vy;
+  }
+  if (overGap && R.py > R_GROUND + 30) R.pitFall = true; // 깊이 빠짐 → 추락 확정
+  // 착지: 얕게 스친 정도(30px 이내)는 땅이 돌아오면 안전하게 복귀
+  if (!R.pitFall && !overGap && R.vy >= 0 && R.py >= R_GROUND) {
     if (R.vy > 3) { // 착지 먼지
       for (let i = 0; i < 4; i++) particles.push({ x: R_PX + rand(-12, 12), y: R_GROUND, vx: rand(-1.2, 1.2), vy: rand(-0.6, 0), life: rand(8, 14), color: '#cfd3dd' });
     }
@@ -7126,7 +7139,7 @@ $('mp-reset').addEventListener('click', () => {
 });
 
 // ---------- 버전 표시 & 최신 버전 유도 ----------
-const GAME_VERSION = 63; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
+const GAME_VERSION = 64; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
 const verLabel = $('version-label');
 function setVerLabel(txt, cls) {
   if (!verLabel) return;
