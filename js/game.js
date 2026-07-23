@@ -713,25 +713,85 @@ function vib(msOrPattern) {
   try { if (navigator.vibrate) navigator.vibrate(msOrPattern); } catch (e) {}
 }
 
-// ---------- 배경음악 (칩튠 루프) ----------
-// 32스텝 시퀀서: 멜로디(사각파) + 베이스(삼각파) + 하이 블립 퍼커션
+// ---------- 배경음악 (4트랙 칩튠 — 스윙 리듬의 경쾌한 오리지널 루프) ----------
+// 멜로디(사각파) + 화음 콤프(사각파) + 워킹 베이스(삼각파) + 드럼(킥·스네어·햇)
 const bgm = {
   get on() { return settings.music; },
   timer: null,
   step: 0,
-  // 0 = 쉼표. 경쾌한 C장조 루프
+  // ♪ 64스텝(16비트 4마디) C장조 — 통통 튀는 싱커페이션 멜로디
   MEL: [
-    523, 0, 659, 784, 659, 0, 523, 659,
-    587, 0, 698, 880, 698, 0, 587, 698,
-    523, 0, 659, 784, 1047, 0, 784, 659,
-    698, 659, 587, 523, 659, 0, 523, 0,
+    523, 0, 659, 784, 880, 784, 0, 659, 698, 0, 587, 0, 784, 0, 659, 523,
+    587, 0, 698, 880, 1047, 0, 880, 698, 784, 698, 659, 587, 659, 0, 523, 0,
+    659, 659, 0, 784, 880, 0, 1047, 880, 784, 0, 659, 0, 587, 659, 698, 784,
+    880, 0, 784, 698, 659, 0, 587, 0, 523, 587, 659, 784, 1047, 0, 523, 0,
   ],
+  // 밴드 콤프: 마디별 코드 (오프비트에 두 음 스타카토)
+  CHORDS: [[330, 392], [349, 440], [330, 440], [392, 494]], // C · F · Am · G
+  // 워킹 베이스: 근음-5도 + 경과음
   BASS: [
-    131, 0, 131, 0, 175, 0, 175, 0,
-    147, 0, 147, 0, 196, 0, 196, 0,
-    131, 0, 131, 0, 175, 0, 175, 0,
-    196, 0, 165, 0, 131, 0, 131, 0,
+    131, 0, 0, 0, 196, 0, 0, 0, 131, 0, 0, 0, 196, 0, 165, 175,
+    175, 0, 0, 0, 262, 0, 0, 0, 196, 0, 0, 0, 196, 0, 175, 165,
+    220, 0, 0, 0, 165, 0, 0, 0, 175, 0, 0, 0, 220, 0, 196, 175,
+    196, 0, 0, 0, 196, 0, 0, 0, 131, 0, 165, 0, 196, 0, 247, 0,
   ],
+  // 🛸 스타 파이터: A단조 히로익 드라이브 (32스텝)
+  MEL_F: [
+    440, 0, 523, 587, 659, 0, 587, 523, 494, 0, 587, 659, 698, 0, 659, 587,
+    523, 0, 659, 784, 880, 0, 784, 659, 698, 659, 587, 494, 440, 0, 330, 0,
+  ],
+  BASS_F: [
+    110, 110, 0, 110, 165, 0, 110, 0, 123, 123, 0, 123, 185, 0, 123, 0,
+    131, 131, 0, 131, 196, 0, 131, 0, 175, 0, 165, 0, 147, 0, 165, 0,
+  ],
+  // 🌌 우주 구간: 몽환 멜로디 (기존 유지)
+  MEL_SPACE: [
+    392, 0, 494, 0, 587, 0, 659, 0, 587, 0, 494, 0, 440, 0, 494, 0,
+    392, 0, 494, 0, 659, 0, 784, 0, 659, 0, 587, 0, 494, 0, 440, 0,
+  ],
+  playStep(i) {
+    // 우주(13,500점~) 몽환 모드
+    if (!runnerMode && !fighterMode && state === State.PLAYING && score > 13500) {
+      if (i % 2) return;
+      const sm = this.MEL_SPACE[(i >> 1) % 32];
+      if (sm) {
+        tone(sm, 0.5, 'triangle', 0.09);
+        tone(sm * 1.5, 0.5, 'sine', 0.03);
+      }
+      return;
+    }
+    if (fighterMode) { // 히로익 드라이브
+      const m = this.MEL_F[i % 32];
+      const b = this.BASS_F[i % 32];
+      if (m) {
+        tone(m, 0.13, 'square', 0.07);
+        tone(m * 2, 0.13, 'square', 0.02);
+      }
+      if (b) tone(b, 0.14, 'triangle', 0.13);
+      if (i % 8 === 0) tone(72, 0.09, 'sine', 0.22);            // 킥
+      else if (i % 8 === 4) { tone(210, 0.05, 'square', 0.05); tone(3400, 0.03, 'square', 0.028); } // 스네어
+      if (i % 2 === 1) tone(6200, 0.016, 'square', 0.014);       // 햇
+      return;
+    }
+    // 경쾌 스윙 (시리즈1·문 런 — 문 런은 2도 올려 더 신나게)
+    const tr = runnerMode ? 1.122 : 1;
+    const m = this.MEL[i % 64];
+    const b = this.BASS[i % 64];
+    if (m) {
+      tone(m * tr, 0.14, 'square', 0.075);
+      tone(m * tr * 2, 0.14, 'square', 0.016); // 옥타브 더블
+    }
+    // 오프비트 코드 콤프 (움-빠! 밴드 느낌)
+    if (i % 4 === 2) {
+      const ch = this.CHORDS[Math.floor((i % 64) / 16)];
+      tone(ch[0] * tr, 0.09, 'square', 0.032);
+      tone(ch[1] * tr, 0.09, 'square', 0.032);
+    }
+    if (b) tone(b * tr, 0.22, 'triangle', 0.12);
+    if (i % 8 === 0) tone(76, 0.08, 'sine', 0.2);                // 킥
+    else if (i % 8 === 4) { tone(220, 0.045, 'square', 0.045); tone(3600, 0.028, 'square', 0.024); } // 스네어
+    if (i % 2 === 1) tone(6400, 0.015, 'square', 0.013);          // 햇
+  },
   start() {
     if (!this.on || this.timer) return;
     try {
@@ -740,34 +800,17 @@ const bgm = {
     } catch (e) { return; }
     this.timer = setInterval(() => {
       const i = this.step++;
-      // 우주(13,500점~)에선 느리고 몽환적인 멜로디
-      if (state === State.PLAYING && score > 13500) {
-        if (i % 2) return; // 반 박자 템포
-        const m = this.MEL_SPACE[(i >> 1) % 32];
-        if (m) {
-          tone(m, 0.5, 'triangle', 0.09);
-          tone(m * 1.5, 0.5, 'sine', 0.03);
-        }
-        return;
+      if (i % 2 === 1) { // 🎷 스윙: 뒷박을 살짝 늦게
+        setTimeout(() => { if (this.timer) this.playStep(i); }, 40);
+      } else {
+        this.playStep(i);
       }
-      const m = this.MEL[i % 32];
-      const b = this.BASS[i % 32];
-      if (m) {
-        tone(m, 0.16, 'square', 0.075);
-        tone(m * 2, 0.16, 'square', 0.018); // 옥타브 위 살짝 겹쳐 풍성하게
-      }
-      if (b) tone(b, 0.3, 'triangle', 0.11);
-      if (i % 4 === 2) tone(2093, 0.03, 'square', 0.02); // 퍼커션 블립
-    }, 150);
+    }, 124);
   },
   stop() {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
   },
-  MEL_SPACE: [
-    392, 0, 494, 0, 587, 0, 659, 0, 587, 0, 494, 0, 440, 0, 494, 0,
-    392, 0, 494, 0, 659, 0, 784, 0, 659, 0, 587, 0, 494, 0, 440, 0,
-  ],
   toggle() {
     settings.music = !settings.music;
     saveSettings();
@@ -7323,7 +7366,7 @@ $('mp-reset').addEventListener('click', () => {
 });
 
 // ---------- 버전 표시 & 최신 버전 유도 ----------
-const GAME_VERSION = 65; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
+const GAME_VERSION = 66; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
 const verLabel = $('version-label');
 function setVerLabel(txt, cls) {
   if (!verLabel) return;
