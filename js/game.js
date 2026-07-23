@@ -5731,7 +5731,7 @@ refreshMenu();
 loop();
 
 // ---------- 버전 표시 & 최신 버전 유도 ----------
-const GAME_VERSION = 52; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
+const GAME_VERSION = 53; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
 const verLabel = $('version-label');
 function setVerLabel(txt, cls) {
   if (!verLabel) return;
