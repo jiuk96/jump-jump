@@ -318,7 +318,8 @@ async function submitScore(name, sc) {
     body: JSON.stringify(body),
   });
   try {
-    let res = await post({ name, score: sc, mode: dailyMode ? 'daily' : 'normal' });
+    let res = await post({ name, score: sc, mode: dailyMode ? 'daily' : 'normal', charid: curChar });
+    if (!res.ok) res = await post({ name, score: sc, mode: dailyMode ? 'daily' : 'normal' }); // charid 컬럼 폴백
     if (!res.ok) res = await post({ name, score: sc }); // mode 컬럼이 아직 없으면 폴백
     return res.ok;
   } catch (e) {
@@ -328,18 +329,21 @@ async function submitScore(name, sc) {
 
 // 최근 상위 기록을 가져와 닉네임별 최고점만 남김
 async function fetchScores(tab) {
-  let url = `${SUPA_URL}/rest/v1/scores?select=name,score,created_at&order=score.desc&limit=300`;
+  let filter = '';
   if (tab === 'week') {
     const since = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
-    url += `&created_at=gte.${since}`;
+    filter = `&created_at=gte.${since}`;
   } else if (tab === 'day') {
     // 오늘의 챌린지: KST 자정 이후 + daily 모드만
     const now = Date.now() + 9 * 3600 * 1000;
     const k = new Date(now);
     const startUtc = Date.UTC(k.getUTCFullYear(), k.getUTCMonth(), k.getUTCDate()) - 9 * 3600 * 1000;
-    url += `&mode=eq.daily&created_at=gte.${new Date(startUtc).toISOString()}`;
+    filter = `&mode=eq.daily&created_at=gte.${new Date(startUtc).toISOString()}`;
   }
-  const res = await fetch(url, { headers: supaHeaders });
+  const get = (cols) =>
+    fetch(`${SUPA_URL}/rest/v1/scores?select=${cols}&order=score.desc&limit=300${filter}`, { headers: supaHeaders });
+  let res = await get('name,score,created_at,charid');
+  if (!res.ok) res = await get('name,score,created_at'); // charid 컬럼이 아직 없으면 폴백
   if (!res.ok) throw new Error('fetch failed');
   const rows = await res.json();
   const bestByName = new Map();
@@ -348,7 +352,7 @@ async function fetchScores(tab) {
       bestByName.set(r.name, r);
     }
   }
-  return [...bestByName.values()].sort((a, b) => b.score - a.score).slice(0, 50);
+  return [...bestByName.values()].sort((a, b) => b.score - a.score).slice(0, 10); // 톱 10
 }
 
 function askNickname() {
@@ -392,12 +396,40 @@ async function renderLeaderboard() {
       return;
     }
     list.innerHTML = '';
-    const medals = ['🥇', '🥈', '🥉'];
-    rows.forEach((r, i) => {
+    // 🏆 명예의 전당: 1·2·3등 시상대 — 1등이 가운데 제일 높이 선다
+    const podium = document.createElement('div');
+    podium.className = 'podium';
+    const medals3 = { 1: '🥇', 2: '🥈', 3: '🥉' };
+    for (const rank of [2, 1, 3]) { // 왼쪽 2등, 가운데 1등, 오른쪽 3등
+      const r = rows[rank - 1];
+      const col = document.createElement('div');
+      col.className = `podium-col p${rank}` +
+        (r && r.name === myName ? ' me' : '') + (r ? '' : ' empty');
+      if (r) {
+        const cdef = CHARACTERS[r.charid] || CHARACTERS.dungi; // 달성 캐릭터 (기록에 없으면 둥이)
+        col.innerHTML = `
+          ${rank === 1 ? '<div class="podium-crown">👑</div>' : ''}
+          <img class="podium-char" src="assets/character/${cdef.dir}jump-left.png" alt="">
+          <div class="podium-name"></div>
+          <div class="podium-score">${r.score.toLocaleString()}</div>
+          <div class="podium-block"><span>${medals3[rank]}</span>${rank}</div>`;
+        col.querySelector('.podium-name').textContent = r.name; // XSS 방지: textContent 사용
+      } else {
+        col.innerHTML = `
+          <div class="podium-vacant">?</div>
+          <div class="podium-name">도전!</div>
+          <div class="podium-score">&nbsp;</div>
+          <div class="podium-block"><span>${medals3[rank]}</span>${rank}</div>`;
+      }
+      podium.appendChild(col);
+    }
+    list.appendChild(podium);
+    // 4~10등 리스트
+    rows.slice(3).forEach((r, i) => {
       const el = document.createElement('div');
       el.className = 'lb-row' + (r.name === myName ? ' me' : '');
       el.innerHTML = `
-        <span class="lb-rank">${medals[i] || (i + 1)}</span>
+        <span class="lb-rank">${i + 4}</span>
         <span class="lb-name"></span>
         <span class="lb-score">${r.score.toLocaleString()}</span>`;
       el.querySelector('.lb-name').textContent = r.name; // XSS 방지: textContent 사용
