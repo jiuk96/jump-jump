@@ -55,6 +55,32 @@ const PlatType = {
   ICE: 'ice',           // 하늘색: 밟으면 잠시 미끄러움 (눈 올 때 자주)
 };
 
+// ⏳ 남은 시간 바 (부스트·무적·파워업) — 우측 상단에 아이콘 + 줄어드는 바
+function drawTimerBars(bars, topY, rightX) {
+  let y = topY;
+  for (const b of bars) {
+    if (!(b.frac > 0)) continue;
+    const bw = 112;
+    const bx = rightX - bw;
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.62)';
+    roundRect(bx - 24, y - 9, bw + 28, 18, 9);
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(b.icon, bx - 19, y + 0.5);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.16)';
+    roundRect(bx, y - 4.5, bw - 4, 9, 4.5);
+    const fw = Math.max(2, (bw - 4) * clamp(b.frac, 0, 1));
+    ctx.fillStyle = b.color;
+    roundRect(bx, y - 4.5, fw, 9, 4.5);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    roundRect(bx, y - 4.5, fw, 3.5, 1.7);
+    ctx.restore();
+    y += 22;
+  }
+}
+
 // 노치(안전 영역) 상단 높이 → 논리 px (기기별 UI 보정)
 function safeTopL() {
   const st = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sat')) || 0;
@@ -1073,6 +1099,8 @@ let cleared = false;   // 이번 판 클리어 여부
 let dying = 0;         // 죽음 슬로모션 프레임
 let deathSpin = 0;
 let landSquash = 0;    // 착지 스쿼시 연출 프레임
+let jetpackMaxT = 0;   // 부스트 바 최대치
+let invMaxT = 0;       // 무적 바 최대치
 let runMaxCombo, runKills, runBosses, runStars; // 이번 판 통계
 let thunderCombo;      // 번개 충전 콤보 (번개 강화)
 let shieldCharges;     // 남은 보호막 (보호막 강화)
@@ -1879,6 +1907,11 @@ function update() {
   if (cheatGod && invincible < 30) invincible = 30; // 🛠️ 운영자 무적
   // 🚀 부스터(시작 로켓·미션 제트팩·스타 파워·복귀 비행) 중엔 무적 — 보호막도 소모되지 않음
   if (jetpackTimer > 0 && invincible < 2) invincible = 2;
+  // ⏳ 남은 시간 바 최대치 추적
+  if (jetpackTimer > jetpackMaxT) jetpackMaxT = jetpackTimer;
+  if (jetpackTimer <= 0) jetpackMaxT = 0;
+  if (invincible > invMaxT) invMaxT = invincible;
+  if (invincible <= 0) invMaxT = 0;
 
   // 죽음 슬로모션: 잠시 느리게 떨어지며 빙글 돈 뒤 가위바위보/게임오버
   if (dying > 0) {
@@ -4590,12 +4623,9 @@ function draw() {
     ctx.fillText('🪙 ' + runCoins, 18, 63);
     ctx.fillStyle = '#c78a00';
     ctx.fillText(`⭐ ${starCount}/${starGoalNow()}`, 110, 63);
-    // ⚡ 번개 충전 / 🛡️ 보호막 (해금한 경우에만)
-    if (upg.thunder > 0 || shieldMax() > 0) {
-      const parts = [];
-      if (upg.thunder > 0) parts.push(`⚡${Math.min(thunderCombo, thunderNeed())}/${thunderNeed()}`);
-      if (shieldMax() > 0) parts.push(`🛡️${shieldCharges}`);
-      const txt = parts.join(' ');
+    // ⚡ 번개 충전 (해금한 경우에만)
+    if (upg.thunder > 0) {
+      const txt = `⚡${Math.min(thunderCombo, thunderNeed())}/${thunderNeed()}`;
       ctx.font = '800 13px sans-serif';
       const tw = ctx.measureText(txt).width;
       ctx.fillStyle = 'rgba(255,255,255,0.75)';
@@ -4603,6 +4633,11 @@ function draw() {
       ctx.fillStyle = '#8e6d00';
       ctx.fillText(txt, 208, 63);
     }
+    // ⏳ 부스트·무적 남은 시간 바
+    drawTimerBars([
+      { icon: '🚀', frac: jetpackTimer > 0 && jetpackMaxT > 0 ? jetpackTimer / jetpackMaxT : 0, color: '#e67e22' },
+      { icon: '✨', frac: invincible > 40 && invMaxT > 0 ? invincible / invMaxT : 0, color: '#f6b93b' },
+    ], 96, W - 60);
 
     // 콤보 표시 (5 이상일 때 오른쪽에)
     if (combo >= 5) {
@@ -4631,10 +4666,18 @@ function draw() {
       ctx.textAlign = 'left';
     }
 
-    if (lives > 0) {
-      ctx.font = '15px sans-serif';
-      ctx.fillStyle = '#b7791f';
-      ctx.fillText('❤️'.repeat(lives), 10, mission ? 130 : 92);
+    { // 🎒 이번 판 아이템 트레이: 생명 · 보호막 · 가위바위보 찬스
+      const trayParts = [`❤️${lives}`];
+      if (shieldMax() > 0) trayParts.push(`🛡️${shieldCharges}`);
+      if (!rpsUsed) trayParts.push('✊1');
+      const trayTxt = trayParts.join('  ');
+      ctx.font = '800 13px sans-serif';
+      const trayW = ctx.measureText(trayTxt).width + 18;
+      const trayY = mission ? 118 : 84;
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      roundRect(8, trayY, trayW, 25, 12.5);
+      ctx.fillStyle = '#5a4a2f';
+      ctx.fillText(trayTxt, 17, trayY + 13);
     }
 
     ctx.restore();
@@ -6028,17 +6071,13 @@ function drawFighter() {
     ctx.fillStyle = '#b7791f';
     ctx.fillText('🪙 ' + F.coins, 18, 63);
     ctx.font = '17px sans-serif';
-    ctx.fillText('❤️'.repeat(Math.max(0, F.hearts)) + '🖤'.repeat(Math.max(0, 3 - F.hearts)), 10, 92);
-    // 파워업 남은 시간
-    const powTxt = [];
-    if (F.pow.double > 0) powTxt.push(`🔫${Math.ceil(F.pow.double / 60)}s`);
-    if (F.pow.spread > 0) powTxt.push(`🎯${Math.ceil(F.pow.spread / 60)}s`);
-    if (F.pow.shield > 0) powTxt.push(`🛡️${F.pow.shield}`);
-    if (powTxt.length) {
-      ctx.font = '800 13px sans-serif';
-      ctx.fillStyle = 'rgba(255,255,255,0.9)';
-      ctx.fillText(powTxt.join(' '), 10, 116);
-    }
+    ctx.fillText('❤️'.repeat(Math.max(0, F.hearts)) + '🖤'.repeat(Math.max(0, 3 - F.hearts))
+      + (F.pow.shield > 0 ? `  🛡️${F.pow.shield}` : ''), 10, 92);
+    // ⏳ 파워업 남은 시간 바
+    drawTimerBars([
+      { icon: '🔫', frac: F.pow.double > 0 ? F.pow.double / 600 : 0, color: '#8e44ad' },
+      { icon: '🎯', frac: F.pow.spread > 0 ? F.pow.spread / 600 : 0, color: '#e67e22' },
+    ], 52, W - 60);
     if (best3 > 0) {
       ctx.font = '700 12px sans-serif';
       ctx.fillStyle = 'rgba(255,255,255,0.7)';
@@ -7003,6 +7042,10 @@ function drawRunner() {
       ctx.fillStyle = 'rgba(255,255,255,0.75)';
       ctx.fillText(`BEST ${best2}m`, 12, 114);
     }
+    // ⏳ 스타 무적 남은 시간 바
+    drawTimerBars([
+      { icon: '⭐', frac: R.starT > 0 ? R.starT / 250 : 0, color: '#f6b93b' },
+    ], 66, RVW - 60);
   }
 
   // 떠오르는 텍스트
@@ -7369,7 +7412,7 @@ $('mp-reset').addEventListener('click', () => {
 });
 
 // ---------- 버전 표시 & 최신 버전 유도 ----------
-const GAME_VERSION = 67; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
+const GAME_VERSION = 68; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
 const verLabel = $('version-label');
 function setVerLabel(txt, cls) {
   if (!verLabel) return;
