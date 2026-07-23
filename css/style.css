@@ -506,3 +506,26 @@ html, body {
 .blk.ice {
   background: linear-gradient(#eafafd, #aee6f2 50%, #6fc7de);
 }
+
+/* ---------- 데일리/강화/캐릭터 ---------- */
+.btn-daily {
+  font-family: inherit;
+  font-size: clamp(14px, 4vw, 18px);
+  font-weight: 800;
+  padding: 10px 30px;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #f6b93b, #e67e22);
+  color: #fff;
+  box-shadow: 0 4px 0 #b06018;
+  cursor: pointer;
+}
+
+.btn-daily:active { transform: translateY(3px); box-shadow: 0 1px 0 #b06018; }
+
+.upg-pips { display: flex; gap: 3px; margin-top: 3px; }
+.upg-pip { width: 14px; height: 8px; border-radius: 4px; background: #dfe4ea; }
+.upg-pip.on { background: linear-gradient(90deg, #f6b93b, #e67e22); }
+
+.char-img { width: 58px; height: 58px; flex-shrink: 0; image-rendering: auto; }
+.char-cur { outline: 3px solid #27ae60; }
