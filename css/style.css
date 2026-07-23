@@ -1139,3 +1139,33 @@ html, body {
   background: linear-gradient(135deg, #7a7d92, #9b9db1);
   box-shadow: 0 4px 10px rgba(60, 60, 80, 0.3), inset 0 -3px 0 rgba(0, 0, 0, 0.14);
 }
+
+/* ---------- 시작 화면: 시리즈 해금 표시 ---------- */
+.series-count {
+  margin: 6px 0 2px;
+  font-size: clamp(12px, 3.4vw, 14px);
+  font-weight: 800;
+  color: #4a5568;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+.btn-run3 {
+  display: block;
+  margin: 8px auto 0;
+  width: min(78%, 300px);
+  padding: 9px 18px;
+  border: 2px dashed rgba(90, 95, 115, 0.45);
+  border-radius: 24px;
+  font-family: inherit;
+  font-size: clamp(13px, 3.8vw, 15px);
+  font-weight: 800;
+  color: #6b7280;
+  background: rgba(255, 255, 255, 0.35);
+  cursor: default;
+}
+.btn-run3 small {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #9aa0ad;
+  margin-top: 1px;
+}

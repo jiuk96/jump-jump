@@ -4433,10 +4433,12 @@ function refreshMenu() {
   const rb = $('btn-run2');
   if (rb) {
     rb.textContent = stats.moon
-      ? `🏃 시리즈2 · 문 런${best2 > 0 ? ` (BEST ${best2}m)` : ''}`
+      ? `2️⃣ 시리즈2 · 문 런${best2 > 0 ? ` (BEST ${best2}m)` : ''}`
       : '🔒 시리즈2 · 문 런';
     rb.classList.toggle('locked', !stats.moon);
   }
+  const sc2 = $('series-count');
+  if (sc2) sc2.textContent = `🎮 시리즈 ${stats.moon ? 2 : 1} / 3 해금`;
   $('title-sub').textContent = title ? `🎖️ ${title}` : '하늘 끝까지 올라가 보세요';
 }
 
