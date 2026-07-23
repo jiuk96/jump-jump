@@ -222,6 +222,12 @@
       </div>
     </div>
 
+    <!-- 업데이트 알림 배너 -->
+    <div id="update-banner" class="update-banner hidden">
+      <span>🆕 게임이 업데이트됐어요!</span>
+      <button id="btn-update">새로고침</button>
+    </div>
+
     <!-- 일시정지 버튼 -->
     <button id="btn-pause" class="pause-btn hidden" aria-label="일시정지">❚❚</button>
 
@@ -240,8 +246,22 @@
   <script src="js/game.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js').catch(() => {});
+      window.addEventListener('load', async () => {
+        try {
+          const reg = await navigator.serviceWorker.register('sw.js');
+          // 오래 켜둔 세션을 위해 15분마다 업데이트 확인
+          setInterval(() => reg.update().catch(() => {}), 15 * 60 * 1000);
+        } catch (e) { /* 등록 실패는 무시 */ }
+      });
+
+      // 새 서비스워커가 페이지를 넘겨받으면 = 새 버전 배포됨 → 배너 표시
+      let hadController = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!hadController) { hadController = true; return; } // 최초 설치는 제외
+        document.getElementById('update-banner').classList.remove('hidden');
+      });
+      document.getElementById('btn-update').addEventListener('click', () => {
+        location.reload();
       });
     }
   </script>
