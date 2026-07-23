@@ -372,25 +372,36 @@ async function renderLeaderboard() {
   }
 }
 
-// ---------- 도감 ----------
+// ---------- 도감 (누적 달성형 — 목표를 채워야 등록!) ----------
+// [이모지, 이름, 목표 횟수, 방법 힌트]
 const DEX = {
-  plat_normal: ['🟢', '초록 발판'], plat_moving: ['🔵', '파란 발판'],
-  plat_oneshot: ['⚪', '흰 발판'], plat_ice: ['🧊', '얼음 발판'], plat_breaking: ['🟤', '갈색 발판'],
-  coin: ['🪙', '코인'], star: ['⭐', '별'], rainbow: ['🌈', '무지개 코인'],
-  spring: ['🔺', '스프링'], jetpack: ['🚀', '제트팩'], cannon: ['🎯', '대포'], sstar: ['💫', '별똥별'],
-  bug: ['👾', '몬스터'], ufo: ['🛸', 'UFO'], blackhole: ['🕳️', '블랙홀'],
-  dizzy: ['😵', '어지럼 구름'], bossmon: ['👹', '보스'],
-  rain: ['🌧️', '비'], snow: ['❄️', '눈'], wind: ['💨', '강풍'], moon: ['🌕', '달'],
+  plat_normal: ['🟢', '초록 발판', 300, '밟기'], plat_moving: ['🔵', '파란 발판', 50, '밟기'],
+  plat_oneshot: ['⚪', '흰 발판', 50, '밟기'], plat_ice: ['🧊', '얼음 발판', 25, '밟기'],
+  plat_breaking: ['🟤', '갈색 발판', 15, '부수기'],
+  coin: ['🪙', '코인', 400, '모으기'], star: ['⭐', '별', 40, '모으기'], rainbow: ['🌈', '무지개 코인', 25, '모으기'],
+  spring: ['🔺', '스프링', 30, '타기'], jetpack: ['🚀', '제트팩', 12, '타기'],
+  cannon: ['🎯', '대포', 8, '발사하기'], sstar: ['💫', '별똥별', 5, '잡기'],
+  bug: ['👾', '몬스터', 30, '처치'], ufo: ['🛸', 'UFO', 10, '격추'],
+  blackhole: ['🕳️', '블랙홀', 15, '만나기'], dizzy: ['😵', '어지럼 구름', 6, '당하기'],
+  bossmon: ['👹', '보스', 5, '격파'],
+  rain: ['🌧️', '비', 8, '만나기'], snow: ['❄️', '눈', 8, '만나기'], wind: ['💨', '강풍', 10, '버티기'],
+  moon: ['🌕', '달', 1, '착륙'],
 };
-let dex = new Set();
+let dex = new Set(); // 완성된 항목
 try { JSON.parse(localStorage.getItem('jump-dex') || '[]').forEach((d) => dex.add(d)); } catch (e) {}
-function dexAdd(id) {
-  if (dex.has(id) || !DEX[id]) return;
-  dex.add(id);
-  localStorage.setItem('jump-dex', JSON.stringify([...dex]));
-  if (state === State.PLAYING) {
-    announce(`📖 도감 등록: ${DEX[id][0]} ${DEX[id][1]}`, '#16a085', 90);
+let dexN = {}; // 누적 진행도
+try { dexN = JSON.parse(localStorage.getItem('jump-dexn') || '{}') || {}; } catch (e) {}
+function dexAdd(id, n = 1) {
+  if (!DEX[id] || dex.has(id)) return;
+  dexN[id] = (dexN[id] || 0) + n;
+  if (dexN[id] >= DEX[id][2]) {
+    dex.add(id);
+    localStorage.setItem('jump-dex', JSON.stringify([...dex]));
+    announce(`📖 도감 완성: ${DEX[id][0]} ${DEX[id][1]}!`, '#16a085', 140);
+    sfx.buy();
+    vib(60);
   }
+  localStorage.setItem('jump-dexn', JSON.stringify(dexN));
 }
 
 // ---------- 진동 (숫자 또는 패턴 배열) ----------
@@ -1043,7 +1054,6 @@ function spawnPlatformRow() {
       hp: isUfo ? 2 : 1,
       baseY: y - 40,
     });
-    dexAdd(isUfo ? 'ufo' : 'bug');
   }
 
   // 블랙홀: 6000점부터 드물게 — 발판에서 멀리 떨어진 곳에만 생성
@@ -1441,6 +1451,7 @@ function update() {
         if (p.type === PlatType.BREAKING) {
           p.broken = true;
           p.breakAnim = 1;
+          dexAdd('plat_breaking');
           sfx.break();
           continue; // 튕기지 않고 통과
         }
@@ -1763,7 +1774,6 @@ function update() {
     };
     announce(`👹 ${BOSS_FACES[face].name} 등장!`, '#c0392b', 120);
     nextBossAt += 6000;
-    dexAdd('bossmon');
     // 보스 아레나: 일반 발판은 잠시 사라지고, 화면 전체를 덮는 일자 땅이 생긴다
     const floor = makePlatform(0, cameraY + 568, PlatType.NORMAL);
     floor.x = 0;
@@ -1880,6 +1890,7 @@ function update() {
           missionEvent('Kill');
           stats.kills++;
           runKills++;
+          dexAdd(m.kind);
           saveStats();
           checkAchievements();
         }
@@ -1909,6 +1920,7 @@ function update() {
         saveWallet();
         score += 300; // 격파 보너스 점수
         runBosses++;
+        dexAdd('bossmon');
         missionFlash = 140;
         flashMain = '👹 보스 격파!';
         flashSub = `+${reward}🪙 +300점`;
@@ -1933,6 +1945,7 @@ function update() {
           missionEvent('Kill');
           stats.kills++;
           runKills++;
+          dexAdd(m.kind);
           saveStats();
           checkAchievements();
         } else {
@@ -3791,12 +3804,17 @@ function renderDex() {
   const grid = $('dex-grid');
   grid.innerHTML = '';
   const total = Object.keys(DEX).length;
-  $('dex-count').textContent = `발견: ${dex.size} / ${total}`;
-  for (const [id, [emoji, name]] of Object.entries(DEX)) {
+  $('dex-count').textContent = `완성: ${dex.size} / ${total} — 목표를 채우면 등록됩니다!`;
+  for (const [id, [emoji, name, target, hint]] of Object.entries(DEX)) {
     const found = dex.has(id);
+    const n = Math.min(dexN[id] || 0, target);
     const el = document.createElement('div');
     el.className = 'dex-card' + (found ? '' : ' locked');
-    el.innerHTML = `<span class="dex-emoji">${found ? emoji : '❓'}</span><span class="dex-name">${found ? name : '???'}</span>`;
+    el.innerHTML = found
+      ? `<span class="dex-emoji">${emoji}</span><span class="dex-name">${name}</span><span class="dex-prog done">완성!</span>`
+      : `<span class="dex-emoji">❓</span><span class="dex-name">${hint} ${target}회</span>
+         <div class="dex-bar"><div style="width:${Math.round((n / target) * 100)}%"></div></div>
+         <span class="dex-prog">${n}/${target}</span>`;
     grid.appendChild(el);
   }
 }
