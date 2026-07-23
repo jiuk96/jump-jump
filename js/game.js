@@ -362,16 +362,18 @@ const supaHeaders = {
 };
 let myName = localStorage.getItem('jump-name') || '';
 
-async function submitScore(name, sc) {
+async function submitScore(name, sc, modeStr) {
+  const mode = modeStr || (dailyMode ? 'daily' : 'normal');
   const post = (body) => fetch(`${SUPA_URL}/rest/v1/scores`, {
     method: 'POST',
     headers: { ...supaHeaders, Prefer: 'return=minimal' },
     body: JSON.stringify(body),
   });
   try {
-    let res = await post({ name, score: sc, mode: dailyMode ? 'daily' : 'normal', charid: curChar });
-    if (!res.ok) res = await post({ name, score: sc, mode: dailyMode ? 'daily' : 'normal' }); // charid 컬럼 폴백
-    if (!res.ok) res = await post({ name, score: sc }); // mode 컬럼이 아직 없으면 폴백
+    let res = await post({ name, score: sc, mode, charid: curChar });
+    if (!res.ok) res = await post({ name, score: sc, mode }); // charid 컬럼 폴백
+    // 문 런 기록은 mode 없이 올리면 시리즈1 랭킹을 오염시키므로 여기서 중단
+    if (!res.ok && mode !== 'runner') res = await post({ name, score: sc });
     return res.ok;
   } catch (e) {
     return false;
@@ -379,22 +381,27 @@ async function submitScore(name, sc) {
 }
 
 // 최근 상위 기록을 가져와 닉네임별 최고점만 남김
-async function fetchScores(tab) {
-  let filter = '';
+async function fetchScores(tab, series = 1) {
+  let dateFilter = '';
   if (tab === 'week') {
     const since = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
-    filter = `&created_at=gte.${since}`;
+    dateFilter = `&created_at=gte.${since}`;
   } else if (tab === 'day') {
-    // 오늘의 챌린지: KST 자정 이후 + daily 모드만
+    // 오늘의 챌린지: KST 자정 이후
     const now = Date.now() + 9 * 3600 * 1000;
     const k = new Date(now);
     const startUtc = Date.UTC(k.getUTCFullYear(), k.getUTCMonth(), k.getUTCDate()) - 9 * 3600 * 1000;
-    filter = `&mode=eq.daily&created_at=gte.${new Date(startUtc).toISOString()}`;
+    dateFilter = `&created_at=gte.${new Date(startUtc).toISOString()}`;
   }
-  const get = (cols) =>
-    fetch(`${SUPA_URL}/rest/v1/scores?select=${cols}&order=score.desc&limit=300${filter}`, { headers: supaHeaders });
-  let res = await get('name,score,created_at,charid');
-  if (!res.ok) res = await get('name,score,created_at'); // charid 컬럼이 아직 없으면 폴백
+  // 시리즈별 분리: 2 = 문 런(runner), 1 = 하늘 점프(normal·daily)
+  const modeFilter = series === 2 ? '&mode=eq.runner'
+    : tab === 'day' ? '&mode=eq.daily'
+    : '&mode=neq.runner';
+  const get = (cols, mf) =>
+    fetch(`${SUPA_URL}/rest/v1/scores?select=${cols}&order=score.desc&limit=300${mf}${dateFilter}`, { headers: supaHeaders });
+  let res = await get('name,score,created_at,charid', modeFilter);
+  if (!res.ok) res = await get('name,score,created_at', modeFilter); // charid 컬럼 폴백
+  if (!res.ok && series === 1) res = await get('name,score,created_at', tab === 'day' ? '&mode=eq.daily' : ''); // 구버전 폴백
   if (!res.ok) throw new Error('fetch failed');
   const rows = await res.json();
   const bestByName = new Map();
@@ -417,33 +424,44 @@ function askNickname() {
   return n;
 }
 
-async function autoSubmitScore() {
+async function autoSubmitScore(sc = score, modeStr) {
   const el = $('lb-status');
   const regBtn = $('btn-register');
   el.textContent = '';
   regBtn.classList.add('hidden');
-  if (score < 100) return; // 너무 낮은 점수는 등록하지 않음
+  if (sc < 100) return; // 너무 낮은 기록은 등록하지 않음
   if (!myName) {
     regBtn.classList.remove('hidden');
     return;
   }
   el.textContent = '🏅 랭킹 등록 중...';
-  const ok = await submitScore(myName, score);
+  const ok = await submitScore(myName, sc, modeStr);
   el.textContent = ok ? `🏅 ${myName} — 랭킹에 등록됨!` : '⚠️ 랭킹 등록 실패 (네트워크 확인)';
 }
 
 let lbTab = 'all';
+let lbSeries = 1; // 1 = 하늘 점프, 2 = 문 런
 async function renderLeaderboard() {
   const list = $('lb-list');
+  const fmt = (s) => lbSeries === 2 ? `${s.toLocaleString()}m` : s.toLocaleString();
+  if (lbSeries === 2 && lbTab === 'day') lbTab = 'all'; // 문 런엔 데일리 없음
+  $('lb-ser-1').classList.toggle('active', lbSeries === 1);
+  $('lb-ser-2').classList.toggle('active', lbSeries === 2);
+  $('lb-tab-day').classList.toggle('hidden', lbSeries === 2);
   $('lb-tab-all').classList.toggle('active', lbTab === 'all');
   $('lb-tab-week').classList.toggle('active', lbTab === 'week');
   $('lb-tab-day').classList.toggle('active', lbTab === 'day');
-  $('lb-my').textContent = myName ? `내 닉네임: ${myName} · 최고 ${best}점` : '게임오버 화면에서 닉네임을 만들면 랭킹에 올라갑니다';
+  const myBest = lbSeries === 2 ? `${best2.toLocaleString()}m` : `${best.toLocaleString()}점`;
+  $('lb-my').textContent = myName ? `내 닉네임: ${myName} · 최고 ${myBest}` : '게임오버 화면에서 닉네임을 만들면 랭킹에 올라갑니다';
   list.innerHTML = '<div class="lb-info">불러오는 중...</div>';
+  const mySeries = lbSeries; // 렌더 도중 탭 전환 대비
   try {
-    const rows = await fetchScores(lbTab);
+    const rows = await fetchScores(lbTab, lbSeries);
+    if (mySeries !== lbSeries) return; // 이미 다른 시리즈로 넘어감
     if (!rows.length) {
-      list.innerHTML = '<div class="lb-info">아직 기록이 없어요. 첫 주인공이 되어보세요!</div>';
+      list.innerHTML = lbSeries === 2
+        ? '<div class="lb-info">아직 문 런 기록이 없어요.<br>시리즈2를 클리어하고 첫 주인공이 되어보세요!</div>'
+        : '<div class="lb-info">아직 기록이 없어요. 첫 주인공이 되어보세요!</div>';
       return;
     }
     list.innerHTML = '';
@@ -462,7 +480,7 @@ async function renderLeaderboard() {
           ${rank === 1 ? '<div class="podium-crown">👑</div>' : ''}
           <img class="podium-char" src="assets/character/${cdef.dir}jump-left.png" alt="">
           <div class="podium-name"></div>
-          <div class="podium-score">${r.score.toLocaleString()}</div>
+          <div class="podium-score">${fmt(r.score)}</div>
           <div class="podium-block"><span>${medals3[rank]}</span>${rank}</div>`;
         col.querySelector('.podium-name').textContent = r.name; // XSS 방지: textContent 사용
       } else {
@@ -482,7 +500,7 @@ async function renderLeaderboard() {
       el.innerHTML = `
         <span class="lb-rank">${i + 4}</span>
         <span class="lb-name"></span>
-        <span class="lb-score">${r.score.toLocaleString()}</span>`;
+        <span class="lb-score">${fmt(r.score)}</span>`;
       el.querySelector('.lb-name').textContent = r.name; // XSS 방지: textContent 사용
       list.appendChild(el);
     });
@@ -5043,10 +5061,9 @@ function runnerOver() {
   $('final-best').textContent = `최고 기록 ${best2}m`;
   $('final-stats').textContent = `🏃 ${m}m 질주 · 🪙 ${R.coins}개 획득`;
   $('new-record').classList.toggle('hidden', !isRecord);
-  $('lb-status').textContent = '';
-  $('btn-register').classList.add('hidden');
   overScreen.classList.remove('hidden');
   pauseBtn.classList.add('hidden');
+  autoSubmitScore(m, 'runner'); // 문 런 랭킹 등록 (100m 미만 제외)
 }
 
 function updateRunner() {
@@ -5583,6 +5600,8 @@ $('btn-lb-back').addEventListener('click', () => {
   $('lb-screen').classList.add('hidden');
   startScreen.classList.remove('hidden');
 });
+$('lb-ser-1').addEventListener('click', () => { lbSeries = 1; renderLeaderboard(); });
+$('lb-ser-2').addEventListener('click', () => { lbSeries = 2; renderLeaderboard(); });
 $('lb-tab-all').addEventListener('click', () => { lbTab = 'all'; renderLeaderboard(); });
 $('lb-tab-week').addEventListener('click', () => { lbTab = 'week'; renderLeaderboard(); });
 $('lb-tab-day').addEventListener('click', () => { lbTab = 'day'; renderLeaderboard(); });
@@ -5622,7 +5641,9 @@ startScreen.addEventListener('click', (e) => {
   addFloat(curChar === 'cat' ? '야옹! 🐾' : curChar === 'penguin' ? '펭! 🐾' : curChar === 'rabbit' ? '깡총! 🐾' : '멍멍! 🐾', player.x, player.y - cameraY - 46, '#2c3e50', 16, true);
 });
 $('btn-register').addEventListener('click', () => {
-  if (askNickname()) autoSubmitScore();
+  if (!askNickname()) return;
+  if (runnerMode && R) autoSubmitScore(Math.floor(R.dist), 'runner');
+  else autoSubmitScore();
 });
 
 $('btn-settings').addEventListener('click', () => {
@@ -5685,7 +5706,7 @@ refreshMenu();
 loop();
 
 // ---------- 버전 표시 & 최신 버전 유도 ----------
-const GAME_VERSION = 50; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
+const GAME_VERSION = 51; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
 const verLabel = $('version-label');
 function setVerLabel(txt, cls) {
   if (!verLabel) return;
