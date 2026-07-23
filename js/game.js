@@ -965,14 +965,27 @@ function startReload() {
 function endBossArena() {
   boss = null;
   bossShots = [];
-  if (standPlat) {
-    standPlat = null;
-    player.vy = jumpV(); // 전투 종료 → 다시 통통!
-  }
+  standPlat = null;
   for (const p of platforms) {
     if (p.arena) addBurst(p.x + p.w / 2, p.y, '#f6e58d');
   }
   platforms = platforms.filter((p) => !p.arena);
+
+  // 복귀한 일반 발판 중 화면 중앙 근처의 안전한 발판 위로 바로 안착
+  const cands = platforms.filter((p) =>
+    !p.broken && p.type !== PlatType.BREAKING &&
+    p.y > cameraY + 130 && p.y < cameraY + H - 40);
+  if (cands.length) {
+    cands.sort((a, b) =>
+      Math.abs(a.y - (cameraY + H * 0.6)) - Math.abs(b.y - (cameraY + H * 0.6)));
+    const p = cands[0];
+    player.x = p.x + p.w / 2;
+    player.y = p.y - player.h / 2;
+    addBurst(player.x, player.y, '#7bed9f');
+  }
+  player.vy = jumpV(); // 발판에서 튀어오르며 등반 재개
+  invincible = Math.max(invincible, 180); // 3초 무적으로 안전하게 복귀
+  jetpackSlow = false;
 }
 
 // ---------- 대포 발사 ----------
@@ -1436,6 +1449,13 @@ function update() {
     platforms.push(floor);
     monsters = []; // 아레나에선 보스에게 집중
     bossShots = [];
+    // 부스터/제트팩을 타고 왔다면 비행을 끝내고 바로 낙하 → 전투 시작!
+    if (jetpackTimer > 0) {
+      jetpackTimer = 0;
+      jetpackSlow = false;
+      if (player.vy < 0) player.vy = 1.5;
+      addFloat('비행 종료! 전투 준비!', player.x, player.y - 44, '#e67e22', 15);
+    }
     addFloat('👹 보스전! 좌우로 피하고 🔫 버튼으로 공격!', W / 2, 190, '#c0392b', 16, true);
     beep(70, 0.6, 'sawtooth', 0.22);
     setTimeout(() => beep(55, 0.5, 'sawtooth', 0.2), 350);
