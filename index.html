@@ -357,6 +357,30 @@
         <div class="settings-row"><span>📳 진동</span><div class="seg"><button id="set-vib-on" class="seg-btn">켬</button><button id="set-vib-off" class="seg-btn">끔</button></div></div>
         <div class="settings-row"><span>📱 기울기 감도</span><div class="seg"><button id="set-tilt-low" class="seg-btn">낮음</button><button id="set-tilt-mid" class="seg-btn">보통</button><button id="set-tilt-high" class="seg-btn">높음</button></div></div>
         <div class="settings-row"><span>🔫 발사 버튼</span><div class="seg"><button id="set-hand-r" class="seg-btn">오른쪽</button><button id="set-hand-l" class="seg-btn">왼쪽</button></div></div>
+        <div class="cheat-row">
+          <input id="cheat-input" type="text" placeholder="🔑 치트 코드" autocomplete="off" autocapitalize="off">
+          <button id="btn-cheat">확인</button>
+        </div>
+        <div id="master-panel" class="master-panel hidden">
+          <p class="master-title">🛠️ 운영자 패널</p>
+          <div class="master-grid">
+            <button id="mp-coin" class="mp-btn">💰 코인 +100,000</button>
+            <button id="mp-chars" class="mp-btn">🐾 캐릭터 전부 해금</button>
+            <button id="mp-cos" class="mp-btn">👒 꾸미기 전부 해금</button>
+            <button id="mp-upgmax" class="mp-btn">💪 강화 전부 MAX</button>
+            <button id="mp-upg0" class="mp-btn">💪 강화 초기화</button>
+            <button id="mp-dex" class="mp-btn">📖 도감 완성</button>
+            <button id="mp-ach" class="mp-btn">🏆 도전과제 달성</button>
+            <button id="mp-moon" class="mp-btn">🌕 시리즈2 해금</button>
+            <button id="mp-god" class="mp-btn">🛡️ 무적 모드: OFF</button>
+            <button id="mp-reset" class="mp-btn danger">♻️ 전체 초기화</button>
+          </div>
+          <div class="cheat-row">
+            <input id="mp-score" type="number" placeholder="시작 점수 (예: 20000)" min="0" step="1000">
+            <button id="mp-score-set">적용</button>
+          </div>
+          <p id="mp-status" class="master-status"></p>
+        </div>
       </div>
       <button id="btn-settings-back" class="btn-secondary">돌아가기</button>
     </div>

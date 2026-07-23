@@ -79,6 +79,10 @@ function kstDateNum() { // 한국 시간 기준 오늘 날짜 (YYYYMMDD)
 
 // ---------- 설정 ----------
 let settings = { sfx: true, music: true, vib: true, tilt: 'mid', lefty: false };
+// 🔑 운영자(치트) 상태 — 설정 화면 초기화보다 먼저 선언되어야 함
+let masterMode = localStorage.getItem('jump-master') === '1';
+let cheatGod = false;       // 무적 (세션 한정)
+let cheatStartScore = 0;    // 시작 점수 (세션 한정)
 try { Object.assign(settings, JSON.parse(localStorage.getItem('jump-settings') || '{}')); } catch (e) {}
 function saveSettings() {
   localStorage.setItem('jump-settings', JSON.stringify(settings));
@@ -1189,6 +1193,13 @@ function newGame() {
     }
   }
 
+  // 🛠️ 운영자: 시작 점수 지정 (보스·이정표는 그 지점 이후부터)
+  if (masterMode && cheatStartScore > 0 && state === State.COUNTDOWN) {
+    score = cheatStartScore;
+    nextBossAt = Math.floor(score / 6000) * 6000 + 6000;
+    while (milestoneIdx < MILESTONES.length && MILESTONES[milestoneIdx][0] <= score) milestoneIdx++;
+  }
+
   // 시작 발판: 바닥 근처에 촘촘히
   platforms.push(makePlatform(W / 2 - PLAT_W / 2, H - 60, PlatType.NORMAL));
   highestPlatY = H - 60;
@@ -1648,6 +1659,7 @@ function playRps(mine) {
 // ---------- 업데이트 ----------
 function update() {
   frame++;
+  if (cheatGod && invincible < 30) invincible = 30; // 🛠️ 운영자 무적
 
   // 죽음 슬로모션: 잠시 느리게 떨어지며 빙글 돈 뒤 가위바위보/게임오버
   if (dying > 0) {
@@ -4785,6 +4797,7 @@ function refreshSettingsUI() {
     ['set-hand-r', !settings.lefty], ['set-hand-l', settings.lefty],
   ];
   for (const [id, on] of map) $(id).classList.toggle('active', on);
+  $('master-panel').classList.toggle('hidden', !masterMode);
   refreshControlUI();
 }
 
@@ -5094,6 +5107,7 @@ function runnerOver() {
 
 function updateRunner() {
   frame++;
+  if (cheatGod && R.inv < 30) R.inv = 30; // 🛠️ 운영자 무적
   const spd = runnerSpeed();
   R.dist += spd / 9; // 미터 환산
 
@@ -5731,8 +5745,100 @@ newGame(); // 메뉴 뒤 배경용
 refreshMenu();
 loop();
 
+// ---------- 🔑 치트 코드 & 운영자 패널 ----------
+function mpStatus(msg) {
+  const el = $('mp-status');
+  el.textContent = msg;
+  sfx.buy();
+  setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 2200);
+}
+
+$('btn-cheat').addEventListener('click', () => {
+  const code = $('cheat-input').value.trim().toLowerCase();
+  $('cheat-input').value = '';
+  if (code === 'master') {
+    masterMode = true;
+    localStorage.setItem('jump-master', '1');
+    refreshSettingsUI();
+    sfx.bonus();
+    vib(80);
+    mpStatus('🛠️ 운영자 모드 활성화!');
+  } else if (code) {
+    $('cheat-input').placeholder = '❌ 잘못된 코드';
+    beep(180, 0.12, 'square', 0.12);
+    setTimeout(() => { $('cheat-input').placeholder = '🔑 치트 코드'; }, 1500);
+  }
+});
+
+$('mp-coin').addEventListener('click', () => {
+  wallet += 100000;
+  saveWallet();
+  refreshMenu();
+  mpStatus(`💰 +100,000 (잔액 ${wallet.toLocaleString()})`);
+});
+$('mp-chars').addEventListener('click', () => {
+  ownedChars = new Set(Object.keys(CHARACTERS));
+  saveChars();
+  checkAchievements();
+  mpStatus('🐾 캐릭터 9종 전부 해금!');
+});
+$('mp-cos').addEventListener('click', () => {
+  for (const k of COSMETICS) inv[k] = 1;
+  saveInv();
+  checkAchievements();
+  mpStatus('👒 꾸미기 25종 전부 해금!');
+});
+$('mp-upgmax').addEventListener('click', () => {
+  for (const k of Object.keys(UPGRADES)) upg[k] = UPGRADES[k].max;
+  saveUpg();
+  checkAchievements();
+  mpStatus('💪 모든 강화 Lv50!');
+});
+$('mp-upg0').addEventListener('click', () => {
+  for (const k of Object.keys(UPGRADES)) upg[k] = 0;
+  saveUpg();
+  mpStatus('💪 강화 초기화 완료');
+});
+$('mp-dex').addEventListener('click', () => {
+  for (const [id, d] of Object.entries(DEX)) {
+    dexN[id] = Math.max(dexN[id] || 0, d[2]);
+    dex.add(id);
+  }
+  localStorage.setItem('jump-dex', JSON.stringify([...dex]));
+  localStorage.setItem('jump-dexn', JSON.stringify(dexN));
+  checkAchievements();
+  mpStatus('📖 도감 32종 완성!');
+});
+$('mp-ach').addEventListener('click', () => {
+  for (const a of ACHIEVEMENTS) unlockedAch.add(a.id);
+  saveAch();
+  mpStatus('🏆 도전과제 전부 달성!');
+});
+$('mp-moon').addEventListener('click', () => {
+  stats.moon = true;
+  saveStats();
+  refreshMenu();
+  mpStatus('🌕 시리즈2 문 런 해금!');
+});
+$('mp-god').addEventListener('click', () => {
+  cheatGod = !cheatGod;
+  $('mp-god').textContent = `🛡️ 무적 모드: ${cheatGod ? 'ON' : 'OFF'}`;
+  $('mp-god').classList.toggle('on', cheatGod);
+  mpStatus(cheatGod ? '🛡️ 무적 ON (이번 접속 동안)' : '무적 OFF');
+});
+$('mp-score-set').addEventListener('click', () => {
+  const v = parseInt($('mp-score').value, 10) || 0;
+  cheatStartScore = Math.max(0, v);
+  mpStatus(cheatStartScore > 0 ? `🚀 다음 판 ${cheatStartScore.toLocaleString()}점부터 시작` : '시작 점수 해제');
+});
+$('mp-reset').addEventListener('click', () => {
+  if (!confirm('정말 모든 데이터를 초기화할까요? (코인·기록·해금 전부 삭제)')) return;
+  localStorage.clear();
+  location.reload();
+});
+
 // ---------- 버전 표시 & 최신 버전 유도 ----------
-const GAME_VERSION = 54; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
+const GAME_VERSION = 55; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
 const verLabel = $('version-label');
 function setVerLabel(txt, cls) {
   if (!verLabel) return;
