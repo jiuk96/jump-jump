@@ -957,3 +957,55 @@ html, body {
 
 .stat-cell b { color: #d35400; }
 .stat-cell.boost b { color: #8e44ad; }
+
+/* ---------- 강화 화면: 50레벨 진행 바 + 마일스톤 퍼크 + 해금 토스트 ---------- */
+.upg-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: #e8e2f5;
+  overflow: hidden;
+  margin-top: 5px;
+}
+.upg-bar div {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #8e6cf0, #c56cf0);
+  transition: width 0.25s ease;
+}
+.upg-perks {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 5px;
+}
+.upg-perk {
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: #9a93ad;
+}
+.upg-perk.on {
+  color: #7d3fd4;
+  font-weight: 700;
+}
+.upg-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 78px;
+  transform: translateX(-50%);
+  background: linear-gradient(135deg, #7d3fd4, #b04bd9);
+  color: #fff;
+  font-weight: 800;
+  font-size: 13px;
+  padding: 10px 16px;
+  border-radius: 20px;
+  box-shadow: 0 6px 18px rgba(90, 40, 160, 0.45);
+  z-index: 40;
+  animation: toast-pop 0.35s ease;
+  max-width: 86%;
+  text-align: center;
+  pointer-events: none;
+}
+@keyframes toast-pop {
+  from { transform: translateX(-50%) translateY(14px) scale(0.85); opacity: 0; }
+  to { transform: translateX(-50%) translateY(0) scale(1); opacity: 1; }
+}

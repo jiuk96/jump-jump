@@ -137,35 +137,61 @@ async function loadCharImages() {
 loadCharImages();
 
 // ---------- 영구 강화 (코인으로 레벨업) ----------
-// 가격: 처음엔 싸고 레벨마다 약 2.1배씩 비싸짐
+// 가격: 레벨마다 1.6~2.2배씩 비싸짐 (강화는 긴 여정!)
+// perks: 특정 레벨 도달 시 해금되는 특수 능력
 const UPGRADES = {
-  jump: { name: '점프력', icon: '🦵', desc: '점프 높이 +2%/레벨', max: 5, base: 200 },
-  rocket: { name: '출발 부스트', icon: '🚀', desc: '시작 시 제트팩 0.5초/레벨', max: 3, base: 120 },
-  coinup: { name: '코인 부스터', icon: '💰', desc: '코인 획득량 +5%/레벨', max: 4, base: 150 },
-  revive: { name: '질긴 생명', icon: '❤️', desc: '부활 무적 +1초/레벨', max: 3, base: 180 },
-  reload: { name: '빠른 장전', icon: '⏱️', desc: '재장전 시간 -0.25초/레벨', max: 3, base: 200 },
-  fireslow: { name: '내열 코팅', icon: '🧯', desc: '불길 상승 속도 -8%/레벨', max: 3, base: 220 },
-  ammo: { name: '탄창 확장', icon: '🔫', desc: '총알 +2발/레벨', max: 3, base: 250 },
-  magnet: { name: '기본 자석', icon: '🧲', desc: '자석 없이도 코인을 끌어당김', max: 3, base: 260 },
-  star: { name: '별 수집가', icon: '⭐', desc: '스타 파워 필요 별 -1/레벨', max: 2, base: 500 },
+  jump: { name: '점프력', icon: '🦵', desc: '점프 높이 +0.4%/레벨', max: 50, base: 60, growth: 1.13,
+    perks: { 10: '✨ 더블 점프 해금 — 떨어질 때 탭!', 30: '⚡ 더블 점프가 스프링급으로!', 50: '🌟 더블 점프 2회!' } },
+  ammo: { name: '총 강화', icon: '🔫', desc: '5레벨마다 탄창 +1발', max: 50, base: 70, growth: 1.13,
+    perks: { 15: '🎯 관통탄 — 총알이 몬스터를 뚫음', 35: '💥 더블샷 — 두 발씩 발사' } },
+  thunder: { name: '번개', icon: '⚡', desc: '콤보를 쌓으면 낙뢰가 적을 자동 타격 · 5레벨마다 필요 콤보 -1', max: 50, base: 150, growth: 1.14,
+    perks: { 1: '⚡ 번개 해금 — 콤보를 쌓으면 낙뢰!', 25: '⚡⚡ 이중 낙뢰!', 50: '🌩️ 삼중 낙뢰!' } },
+  shield: { name: '보호막', icon: '🛡️', desc: '피격 방어 버블 · 10레벨마다 방어 +1회', max: 50, base: 200, growth: 1.14,
+    perks: { 1: '🛡️ 보호막 해금!' } },
+  coinup: { name: '코인 부스터', icon: '💰', desc: '코인 획득량 +1%/레벨', max: 50, base: 55, growth: 1.12,
+    perks: { 20: '💎 보석 등장 (+20 코인)', 40: '✨ 골든 터치 — 발판에서 코인이!' } },
+  magnet: { name: '기본 자석', icon: '🧲', desc: '자석 없이도 코인 끌어당김 (+2px/레벨)', max: 50, base: 60, growth: 1.12 },
+  reload: { name: '빠른 장전', icon: '⏱️', desc: '재장전 시간 -1%/레벨', max: 50, base: 55, growth: 1.12 },
+  revive: { name: '질긴 생명', icon: '❤️', desc: '부활 무적 +0.06초/레벨', max: 50, base: 50, growth: 1.12 },
+  rocket: { name: '출발 부스트', icon: '🚀', desc: '시작 제트팩 +0.05초/레벨', max: 50, base: 45, growth: 1.12 },
+  fireslow: { name: '내열 코팅', icon: '🧯', desc: '불길 속도 -0.8%/레벨', max: 50, base: 55, growth: 1.12 },
+  star: { name: '별 수집가', icon: '⭐', desc: '스타 지속 +1%/레벨 · 10레벨마다 필요 별 -1', max: 50, base: 90, growth: 1.13 },
 };
-let upg = { jump: 0, magnet: 0, star: 0, revive: 0, rocket: 0, coinup: 0, reload: 0, fireslow: 0, ammo: 0 };
+let upg = {
+  jump: 0, magnet: 0, star: 0, revive: 0, rocket: 0,
+  coinup: 0, reload: 0, fireslow: 0, ammo: 0, thunder: 0, shield: 0,
+};
 try { upg = Object.assign(upg, JSON.parse(localStorage.getItem('jump-upg') || '{}')); } catch (e) {}
+// 기존 세이브가 새 max를 넘지 않도록 보정
+for (const k of Object.keys(UPGRADES)) upg[k] = Math.min(upg[k] || 0, UPGRADES[k].max);
 function saveUpg() { localStorage.setItem('jump-upg', JSON.stringify(upg)); }
 function upgCost(k) {
-  return Math.round(UPGRADES[k].base * Math.pow(2.1, upg[k]) / 10) * 10;
+  const d = UPGRADES[k];
+  return Math.round(d.base * Math.pow(d.growth, upg[k]) / 10) * 10;
 }
-function ammoMax() { return AMMO_MAX + upg.ammo * 2; }
-function reloadTime() { return RELOAD_TIME - upg.reload * 15; }
+function ammoMax() { return AMMO_MAX + Math.floor(upg.ammo / 5); }
+function reloadTime() { return Math.round(RELOAD_TIME * (1 - 0.01 * upg.reload)); }
+function coinValue() { return 1 + Math.floor(score / 10000); } // 높이 오를수록 코인 가치 상승
+
+// 마일스톤 해금: 강화 레벨이 일정 단계에 도달하면 특수 능력이 열린다
+function hasDoubleJump() { return upg.jump >= 10; }
+function airJumpsMax() { return upg.jump >= 50 ? 2 : 1; }
+function hasPierce() { return upg.ammo >= 15; }
+function hasDoubleShot() { return upg.ammo >= 35; }
+function thunderNeed() { return Math.max(5, 14 - Math.floor(upg.thunder / 5)); }
+function thunderBolts() { return upg.thunder >= 50 ? 3 : upg.thunder >= 25 ? 2 : 1; }
+function shieldMax() { return upg.shield > 0 ? Math.ceil(upg.shield / 10) : 0; }
+function hasGems() { return upg.coinup >= 20; }
+function hasGoldenTouch() { return upg.coinup >= 40; }
 
 // 강화·캐릭터 효과 적용 헬퍼
 function jumpV() {
-  return JUMP_VY * (1 + upg.jump * 0.02 + (curChar === 'rabbit' ? 0.10 : 0));
+  return JUMP_VY * (1 + upg.jump * 0.004 + (curChar === 'rabbit' ? 0.10 : 0));
 }
 function magnetRangeNow() {
-  return magnetActive ? MAGNET_RANGE : [0, 45, 65, 85][upg.magnet];
+  return magnetActive ? MAGNET_RANGE : (upg.magnet > 0 ? 28 + upg.magnet * 2 : 0);
 }
-function starGoalNow() { return STAR_GOAL - upg.star; }
+function starGoalNow() { return STAR_GOAL - Math.floor(upg.star / 10); }
 
 // ---------- 사운드 (Web Audio 간단 효과음) ----------
 let audioCtx = null;
@@ -609,10 +635,10 @@ function starPower() {
     flashSub = '🛡️ 무적!';
   } else {
     flashSub = '무적 비행!';
-    jetpackTimer = Math.max(jetpackTimer, 0) + STAR_FLIGHT;
+    jetpackTimer = Math.max(jetpackTimer, 0) + Math.round(STAR_FLIGHT * (1 + 0.01 * upg.star));
     jetpackSlow = false;
   }
-  invincible = Math.max(invincible, STAR_FLIGHT + 60);
+  invincible = Math.max(invincible, Math.round(STAR_FLIGHT * (1 + 0.01 * upg.star)) + 60);
   sfx.bonus();
   vib(80);
   addBurst(player.x, player.y, '#ffd832');
@@ -737,6 +763,10 @@ let cleared = false;   // 이번 판 클리어 여부
 let dying = 0;         // 죽음 슬로모션 프레임
 let deathSpin = 0;
 let runMaxCombo, runKills, runBosses, runStars; // 이번 판 통계
+let airJumps;          // 남은 공중(더블) 점프 (점프력 Lv10 해금)
+let thunderCombo;      // 번개 충전 콤보 (번개 강화)
+let shieldCharges;     // 남은 보호막 (보호막 강화)
+let boltFx;            // 낙뢰 연출 [{x,y,life,seed}]
 let fireY;             // 아래에서 올라오는 불길 (월드 y)
 let fireOn;            // 불길 활성화 여부
 let fireAnnounced;
@@ -819,6 +849,10 @@ let controlMode = localStorage.getItem('jump-control') || 'touch';
 window.addEventListener('keydown', (e) => {
   if (e.code === 'ArrowLeft') input.left = true;
   if (e.code === 'ArrowRight') input.right = true;
+  if (e.code === 'ArrowUp') {
+    e.preventDefault();
+    if (state === State.PLAYING) tryAirJump();
+  }
   if (e.code === 'Space') {
     e.preventDefault();
     if (state === State.PLAYING) shoot();
@@ -840,13 +874,14 @@ canvas.addEventListener('touchstart', (e) => {
     shoot();
     return;
   }
-  if (controlMode === 'tilt') return; // 기울이기 모드: 발사는 🔫 버튼으로
+  if (controlMode === 'tilt') { tryAirJump(); return; } // 기울이기 모드: 탭=더블 점프, 발사는 🔫 버튼
   const rect = canvas.getBoundingClientRect();
   const t = e.changedTouches[0];
   const x = t.clientX - rect.left;
   touchSide = x < rect.width / 2 ? 'left' : 'right';
   input.left = touchSide === 'left';
   input.right = touchSide === 'right';
+  tryAirJump(); // 떨어지는 중 탭 → 더블 점프 (점프력 Lv10 해금)
 }, { passive: false });
 canvas.addEventListener('touchend', (e) => {
   e.preventDefault();
@@ -963,6 +998,10 @@ function newGame() {
   fireY = H + 420;
   fireOn = false;
   fireAnnounced = false;
+  airJumps = airJumpsMax();
+  thunderCombo = 0;
+  shieldCharges = shieldMax();
+  boltFx = [];
 
   // 들고 들어가는 아이템: 판당 1개씩만 사용 (생명도 한 판에 1번!)
   lives = Math.min(inv.life, 1);
@@ -980,7 +1019,7 @@ function newGame() {
     }
     saveInv();
     if (upg.rocket > 0) {
-      jetpackTimer = Math.max(jetpackTimer, upg.rocket * 30); // 출발 부스트 강화
+      jetpackTimer = Math.max(jetpackTimer, upg.rocket * 3); // 출발 부스트 강화
       jetpackSlow = true;
     }
   }
@@ -1118,6 +1157,26 @@ function spawnPlatformRow() {
   highestPlatY = y;
 }
 
+// ---------- 더블 점프 (점프력 Lv10 해금) ----------
+function tryAirJump() {
+  if (!hasDoubleJump() || state !== State.PLAYING) return false;
+  if (boss || holdCannon || standPlat || jetpackTimer > 0 || dying > 0) return false;
+  if (player.vy < 1.5 || airJumps <= 0) return false; // 떨어지는 중에만 사용 가능
+  airJumps--;
+  player.vy = upg.jump >= 30 ? SPRING_VY * 0.85 : jumpV() * 0.92;
+  sfx.spring();
+  vib(25);
+  for (let i = 0; i < 8; i++) {
+    particles.push({
+      x: player.x + rand(-14, 14), y: player.y + player.h / 2,
+      vx: rand(-1.5, 1.5), vy: rand(0.5, 2),
+      life: rand(12, 20), color: '#aee6ff',
+    });
+  }
+  addFloat('더블 점프!', player.x, player.y - 36, '#48c9e5', 13);
+  return true;
+}
+
 // ---------- 발사 ----------
 function shoot() {
   if (holdCannon) { // 대포 안이면 탄환 대신 대포 발사! (탄약 소모 없음)
@@ -1133,7 +1192,9 @@ function shoot() {
     return;
   }
   ammo--;
-  bullets.push({ x: player.x, y: player.y - player.h / 2, vy: BULLET_VY });
+  const mkB = (bx) => bullets.push({ x: bx, y: player.y - player.h / 2, vy: BULLET_VY, pierce: hasPierce() });
+  if (hasDoubleShot()) { mkB(player.x - 8); mkB(player.x + 8); } // 💥 더블샷 (총 강화 Lv35)
+  else mkB(player.x);
   shootPose = 20;
   sfx.shoot();
   missionEvent('Shoot');
@@ -1214,6 +1275,71 @@ function endBossArena() {
   addFloat('🚀 복귀 비행!', player.x, player.y - 44, '#e67e22', 15);
 }
 
+// ---------- 보스 격파 공통 처리 (총알·번개 공용) ----------
+function bossDefeated() {
+  const reward = 20 + boss.tier * 10;
+  runCoins += reward;
+  wallet += reward;
+  stats.coins += reward;
+  saveWallet();
+  score += 300; // 격파 보너스 점수
+  runBosses++;
+  dexAdd('bossmon');
+  missionFlash = 140;
+  flashMain = '👹 보스 격파!';
+  flashSub = `+${reward}🪙 +300점`;
+  addBurst(boss.x, boss.y, '#c0392b');
+  addBurst(boss.x, boss.y, '#f6e58d');
+  shakeT = 14;
+  sfx.bonus();
+  vib(120);
+  endBossArena();
+}
+
+// ---------- 번개 (번개 강화): 콤보가 차면 낙뢰가 적을 자동 타격 ----------
+function fireThunder() {
+  const targets = monsters.filter((m) => !m.dead && m.y > cameraY - 10 && m.y < cameraY + H);
+  targets.sort((a, b) => Math.abs(a.y - player.y) - Math.abs(b.y - player.y));
+  if (boss) targets.unshift(boss);
+  if (!targets.length) return 0;
+  const n = Math.min(thunderBolts(), targets.length);
+  for (let i = 0; i < n; i++) {
+    const t = targets[i];
+    boltFx.push({ x: t.x, y: t.y, life: 16, seed: Math.floor(Math.random() * 233280) });
+    addBurst(t.x, t.y, '#ffe66d');
+    sfx.hit();
+    if (t === boss) {
+      boss.hp--;
+      if (boss.hp <= 0) { bossDefeated(); break; }
+    } else {
+      t.dead = true;
+      missionEvent('Kill');
+      stats.kills++;
+      runKills++;
+      dexAdd(t.kind);
+    }
+  }
+  saveStats();
+  checkAchievements();
+  shakeT = Math.max(shakeT, 8);
+  beep(1300, 0.14, 'sawtooth', 0.15);
+  vib(50);
+  return n;
+}
+
+// ---------- 보호막 (보호막 강화): 몬스터·보스탄·블랙홀 피격을 1회 방어 ----------
+function shieldBlock() {
+  if (shieldCharges <= 0) return false;
+  shieldCharges--;
+  invincible = Math.max(invincible, 60);
+  addBurst(player.x, player.y, '#74b9ff');
+  addFloat(shieldCharges > 0 ? `🛡️ 보호막! (${shieldCharges}회 남음)` : '🛡️ 보호막 소진!',
+    player.x, player.y - 42, '#3f8efc', 14);
+  beep(900, 0.12, 'triangle', 0.14);
+  vib(40);
+  return true;
+}
+
 // ---------- 대포 발사 ----------
 function fireCannon() {
   if (!holdCannon) return;
@@ -1240,7 +1366,7 @@ function tryRevive() {
     player.y = cameraY + H - 4;
     player.vy = SPRING_VY * 1.2;
     player.vx = 0;
-    invincible = REVIVE_INVINCIBLE + upg.revive * 60;
+    invincible = REVIVE_INVINCIBLE + Math.round(upg.revive * 3.6);
     jetpackTimer = 0;
     combo = 0;
     shakeT = 14;
@@ -1260,7 +1386,7 @@ function tryRevive() {
     player.y = cameraY + H - 4;
     player.vy = SPRING_VY * 1.2;
     player.vx = 0;
-    invincible = REVIVE_INVINCIBLE + upg.revive * 60;
+    invincible = REVIVE_INVINCIBLE + Math.round(upg.revive * 3.6);
     jetpackTimer = 0;
     combo = 0;
     shakeT = 14;
@@ -1331,7 +1457,7 @@ function playRps(mine) {
         player.y = cameraY + H - 4;
         player.vy = SPRING_VY * 1.2;
         player.vx = 0;
-        invincible = REVIVE_INVINCIBLE + upg.revive * 60;
+        invincible = REVIVE_INVINCIBLE + Math.round(upg.revive * 3.6);
         jetpackTimer = 0;
         combo = 0;
         standPlat = null;
@@ -1475,6 +1601,7 @@ function update() {
           continue; // 튕기지 않고 통과
         }
         player.y = p.y - player.h / 2;
+        airJumps = airJumpsMax(); // 착지 → 더블 점프 충전
         dexAdd('plat_' + p.type);
         p.squashT = 12; // 밟히면 살짝 눌리는 애니메이션
         for (let di = 0; di < 4; di++) { // 착지 먼지
@@ -1515,6 +1642,15 @@ function update() {
           if (frame - lastCloseCall > 120) addFloat('미끌미끌~', player.x, player.y - 40, '#48c9e5', 14);
         }
         if (p.type === PlatType.ONESHOT) p.broken = true;
+        // ✨ 골든 터치 (코인 부스터 Lv40): 밟은 발판에서 가끔 코인이 솟는다
+        if (hasGoldenTouch() && Math.random() < 0.05) {
+          coinsArr.push({
+            x: p.x + p.w / 2, y: p.y - 26,
+            vy: 0.4, swayPhase: rand(0, Math.PI * 2), spin: rand(0, Math.PI * 2),
+            type: 'coin',
+          });
+          addBurst(p.x + p.w / 2, p.y - 10, '#ffd832');
+        }
         // 미션 훅: 처음 밟는 발판인지 + 스프링 여부
         const fresh = !landedSet.has(p);
         landedSet.add(p);
@@ -1533,6 +1669,8 @@ function update() {
             addFloat(`x${combo} 콤보! +3🪙`, player.x, player.y - 40, '#e056fd', 18);
             sfx.buy();
           }
+          // ⚡ 번개 충전 (번개 강화): 새 발판을 밟을 때마다
+          if (upg.thunder > 0 && thunderCombo < thunderNeed()) thunderCombo++;
         } else {
           combo = 0;
         }
@@ -1588,7 +1726,9 @@ function update() {
   if (--pickupTimer <= 0) {
     pickupTimer = Math.round(rand(35, 75));
     const roll = Math.random();
-    const type = roll < 0.16 ? 'star' : roll < 0.23 ? 'rainbow' : 'coin';
+    const type = roll < 0.16 ? 'star'
+      : roll < 0.23 ? 'rainbow'
+      : (hasGems() && roll < 0.27) ? 'gem' : 'coin'; // 💎 보석 (코인 부스터 Lv20)
     coinsArr.push({
       x: rand(20, W - 20), y: cameraY - 30,
       vy: rand(1.0, 2.1),
@@ -1627,25 +1767,40 @@ function update() {
         if (starCount >= starGoalNow()) starPower();
       } else if (c.type === 'rainbow') {
         dexAdd('rainbow');
-        runCoins += 5;
-        wallet += 5;
-        stats.coins += 5;
+        const rv = 5 * coinValue();
+        runCoins += rv;
+        wallet += rv;
+        stats.coins += rv;
         saveWallet();
         sfx.buy();
-        addFloat('+5🪙', c.x, c.y - 14, '#e056fd', 15);
+        addFloat(`+${rv}🪙`, c.x, c.y - 14, '#e056fd', 15);
         addBurst(c.x, c.y, '#e056fd');
         missionEvent('Coin');
+      } else if (c.type === 'gem') {
+        // 💎 보석 (코인 부스터 Lv20 해금)
+        const gv = 20 * coinValue();
+        runCoins += gv;
+        wallet += gv;
+        stats.coins += gv;
+        saveWallet();
+        sfx.buy();
+        addFloat(`💎 +${gv}🪙`, c.x, c.y - 14, '#9b59b6', 16);
+        addBurst(c.x, c.y, '#a55eea');
+        missionEvent('Coin');
       } else {
-        runCoins++;
-        wallet++;
-        stats.coins++;
-        const bonusRate = (curChar === 'penguin' ? 0.1 : 0) + upg.coinup * 0.05; // 펭귄+코인 부스터
+        const cv = coinValue(); // 높이 오를수록 코인 가치 상승 (10,000점당 +1)
+        runCoins += cv;
+        wallet += cv;
+        stats.coins += cv;
+        const bonusRate = (curChar === 'penguin' ? 0.1 : 0) + upg.coinup * 0.01; // 펭귄+코인 부스터
         if (bonusRate > 0) {
-          coinFrac += bonusRate;
-          if (coinFrac >= 1) { coinFrac -= 1; runCoins++; wallet++; stats.coins++; }
+          coinFrac += cv * bonusRate;
+          const ex = Math.floor(coinFrac);
+          if (ex > 0) { coinFrac -= ex; runCoins += ex; wallet += ex; stats.coins += ex; }
         }
         saveWallet();
         sfx.coin();
+        if (cv > 1) addFloat(`+${cv}🪙`, c.x, c.y - 12, '#f1c40f', 13);
         particles.push({ x: c.x, y: c.y, vx: 0, vy: -1.5, life: 18, color: '#f1c40f' });
         missionEvent('Coin');
         dexAdd('coin');
@@ -1675,6 +1830,7 @@ function update() {
       if (dist < bh.r * 0.7) {
         shakeT = 18;
         addBurst(player.x, player.y, '#6c5ce7');
+        if (shieldBlock()) continue; // 🛡️ 보호막: 무적 60프레임 동안 탈출
         if (!tryRevive()) return;
       }
     }
@@ -1861,6 +2017,7 @@ function update() {
       bs.y = cameraY + H + 999;
       shakeT = 16;
       addBurst(player.x, player.y, '#c0392b');
+      if (shieldBlock()) continue; // 🛡️ 보호막이 대신 맞아줌
       if (!tryRevive()) return;
     }
   }
@@ -1899,11 +2056,13 @@ function update() {
         // 위에서 밟으면: 벌레는 처치, UFO는 밟고 튕기기만
         if (m.kind === 'ufo') {
           player.vy = jumpV();
+          airJumps = airJumpsMax();
           sfx.jump();
           addBurst(m.x, m.y - m.h / 2, '#95afc0');
         } else {
           m.dead = true;
           player.vy = jumpV();
+          airJumps = airJumpsMax();
           sfx.hit();
           vib(40);
           addBurst(m.x, m.y, '#9b59b6');
@@ -1918,6 +2077,7 @@ function update() {
         m.dead = true; // 부활 직후 같은 몬스터에 또 죽지 않게 제거
         shakeT = 16;
         addBurst(m.x, m.y, '#9b59b6');
+        if (shieldBlock()) continue; // 🛡️ 보호막이 대신 맞아줌
         if (!tryRevive()) return;
       }
     }
@@ -1932,32 +2092,14 @@ function update() {
       boss.hp--;
       addBurst(boss.x, boss.y, '#c0392b');
       sfx.hit();
-      if (boss.hp <= 0) {
-        const reward = 20 + boss.tier * 10;
-        runCoins += reward;
-        wallet += reward;
-        stats.coins += reward;
-        saveWallet();
-        score += 300; // 격파 보너스 점수
-        runBosses++;
-        dexAdd('bossmon');
-        missionFlash = 140;
-        flashMain = '👹 보스 격파!';
-        flashSub = `+${reward}🪙 +300점`;
-        addBurst(boss.x, boss.y, '#c0392b');
-        addBurst(boss.x, boss.y, '#f6e58d');
-        shakeT = 14;
-        sfx.bonus();
-        vib(120);
-        endBossArena();
-      }
+      if (boss.hp <= 0) bossDefeated();
       continue;
     }
     for (const m of monsters) {
       if (m.dead) continue;
       if (Math.abs(b.x - m.x) < m.w / 2 && Math.abs(b.y - m.y) < m.h / 2) {
-        b.y = -9999;
         m.hp = (m.hp || 1) - 1;
+        if (!(b.pierce && m.hp <= 0)) b.y = -9999; // 🎯 관통탄(Lv15)은 처치 시 뚫고 지나감
         if (m.hp <= 0) {
           m.dead = true;
           sfx.hit();
@@ -1977,6 +2119,16 @@ function update() {
   }
   bullets = bullets.filter((b) => b.y > cameraY - 50);
   if (shootPose > 0) shootPose--;
+
+  // ⚡ 낙뢰: 충전이 가득하고 화면에 적이 있으면 자동 발사 (없으면 충전 유지)
+  if (upg.thunder > 0 && thunderCombo >= thunderNeed() && frame % 8 === 0) {
+    if (fireThunder() > 0) {
+      thunderCombo = 0;
+      addFloat('⚡ 낙뢰!', player.x, player.y - 40, '#c78a00', 15);
+    }
+  }
+  for (const bf of boltFx) bf.life--;
+  boltFx = boltFx.filter((b) => b.life > 0);
 
   // --- 파티클 ---
   for (const pt of particles) {
@@ -2021,7 +2173,7 @@ function update() {
     }
   }
   if (fireOn && !boss && state === State.PLAYING) {
-    const fireSpd = (0.45 + difficulty() * 0.75) * (1 - 0.08 * upg.fireslow);
+    const fireSpd = (0.45 + difficulty() * 0.75) * (1 - 0.008 * upg.fireslow);
     fireY -= fireSpd;
     // 너무 뒤처지면 화면 아래 3분의 1 지점까지 따라붙음
     fireY = Math.min(fireY, cameraY + H + 320);
@@ -2472,7 +2624,37 @@ function drawCoin(c) {
   const y = c.y - cameraY;
   ctx.save();
   ctx.translate(c.x, y);
-  if (c.type === 'star') {
+  if (c.type === 'gem') {
+    // 💎 보석 (코인 부스터 Lv20): 보라 다이아몬드
+    ctx.shadowColor = 'rgba(165, 94, 234, 0.9)';
+    ctx.shadowBlur = 12;
+    ctx.rotate(Math.sin(c.spin) * 0.25);
+    const gg = ctx.createLinearGradient(0, -12, 0, 12);
+    gg.addColorStop(0, '#e6d3ff');
+    gg.addColorStop(0.5, '#a55eea');
+    gg.addColorStop(1, '#6c3fb5');
+    ctx.fillStyle = gg;
+    ctx.beginPath();
+    ctx.moveTo(0, -12);
+    ctx.lineTo(9, -3);
+    ctx.lineTo(0, 13);
+    ctx.lineTo(-9, -3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#5b2c9c';
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(-9, -3);
+    ctx.lineTo(9, -3);
+    ctx.moveTo(0, -12);
+    ctx.lineTo(-4, -3);
+    ctx.lineTo(0, 13);
+    ctx.stroke();
+  } else if (c.type === 'star') {
     // 반짝이는 별: 금빛 발광 + 회전
     ctx.shadowColor = 'rgba(255, 210, 60, 0.9)';
     ctx.shadowBlur = 12;
@@ -2979,6 +3161,29 @@ function drawPlayer() {
     drawDefaultCharacter();
   }
   ctx.restore();
+
+  // 🛡️ 보호막 버블 (보호막 강화)
+  if (shieldCharges > 0 && state !== State.MENU && dying <= 0) {
+    const pr = 30 + Math.sin(frame * 0.1) * 2;
+    ctx.save();
+    ctx.translate(x, y);
+    const sg2 = ctx.createRadialGradient(0, 0, pr * 0.55, 0, 0, pr);
+    sg2.addColorStop(0, 'rgba(116, 185, 255, 0)');
+    sg2.addColorStop(0.85, 'rgba(116, 185, 255, 0.16)');
+    sg2.addColorStop(1, 'rgba(116, 185, 255, 0.42)');
+    ctx.fillStyle = sg2;
+    ctx.beginPath();
+    ctx.arc(0, 0, pr, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(140, 200, 255, 0.55)';
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath();
+    ctx.arc(-pr * 0.35, -pr * 0.4, pr * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
 }
 
 const wearing = (item) => equip[item] && inv[item];
@@ -3398,6 +3603,38 @@ function draw() {
     ctx.restore();
   }
 
+  // ⚡ 낙뢰 연출: 하늘에서 내리꽂히는 지그재그 번개
+  for (const bf of boltFx) {
+    const a = clamp(bf.life / 16, 0, 1);
+    const ty = bf.y - cameraY;
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = '#fffbe0';
+    ctx.lineWidth = 4;
+    ctx.shadowColor = '#ffe66d';
+    ctx.shadowBlur = 16;
+    ctx.beginPath();
+    ctx.moveTo(bf.x, -12);
+    let zs = bf.seed;
+    let zy = -12;
+    while (zy < ty - 20) {
+      zs = (zs * 9301 + 49297) % 233280;
+      zy += 24;
+      ctx.lineTo(bf.x + ((zs / 233280) - 0.5) * 36, zy);
+    }
+    ctx.lineTo(bf.x, ty);
+    ctx.stroke();
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = '#ffe66d';
+    ctx.stroke();
+    ctx.globalAlpha = a * 0.8;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(bf.x, ty, 10 * (1 - a) + 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
   // 파티클
   for (const pt of particles) {
     ctx.globalAlpha = clamp(pt.life / 20, 0, 1);
@@ -3556,6 +3793,19 @@ function draw() {
     ctx.fillText('🪙 ' + runCoins, 18, 63);
     ctx.fillStyle = '#c78a00';
     ctx.fillText(`⭐ ${starCount}/${starGoalNow()}`, 110, 63);
+    // ⚡ 번개 충전 / 🛡️ 보호막 (해금한 경우에만)
+    if (upg.thunder > 0 || shieldMax() > 0) {
+      const parts = [];
+      if (upg.thunder > 0) parts.push(`⚡${Math.min(thunderCombo, thunderNeed())}/${thunderNeed()}`);
+      if (shieldMax() > 0) parts.push(`🛡️${shieldCharges}`);
+      const txt = parts.join(' ');
+      ctx.font = '800 13px sans-serif';
+      const tw = ctx.measureText(txt).width;
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      roundRect(198, 48, tw + 20, 28, 14);
+      ctx.fillStyle = '#8e6d00';
+      ctx.fillText(txt, 208, 63);
+    }
 
     // 콤보 표시 (5 이상일 때 오른쪽에)
     if (combo >= 5) {
@@ -3817,6 +4067,18 @@ function buyItem(item) {
 }
 
 // ---------- 강화 화면 ----------
+// 강화 마일스톤 해금 토스트 (강화 화면 안에서 보여줌)
+function showUpgToast(text) {
+  document.querySelectorAll('.upg-toast').forEach((t) => t.remove());
+  const t = document.createElement('div');
+  t.className = 'upg-toast';
+  t.textContent = `🔓 해금! ${text}`;
+  $('upg-screen').appendChild(t);
+  setTimeout(() => t.remove(), 2800);
+  sfx.bonus();
+  vib(70);
+}
+
 function renderUpgrades() {
   $('upg-balance').textContent = String(wallet);
   const list = $('upg-list');
@@ -3827,11 +4089,16 @@ function renderUpgrades() {
     const cost = maxed ? 0 : upgCost(key);
     const el = document.createElement('div');
     el.className = 'shop-item';
+    const perksHtml = def.perks
+      ? Object.entries(def.perks).map(([pl, pt]) =>
+          `<span class="upg-perk${lv >= +pl ? ' on' : ''}">${lv >= +pl ? '✅' : '🔒'} Lv${pl} · ${pt}</span>`).join('')
+      : '';
     el.innerHTML = `
       <div class="shop-info">
-        <span class="shop-name">${def.icon} ${def.name} <small>Lv.${lv}</small></span>
+        <span class="shop-name">${def.icon} ${def.name} <small>Lv.${lv} / ${def.max}</small></span>
         <span class="shop-desc">${def.desc}</span>
-        <div class="upg-pips">${Array.from({ length: def.max }, (_, i) => `<span class="upg-pip${i < lv ? ' on' : ''}"></span>`).join('')}</div>
+        <div class="upg-bar"><div style="width:${Math.round((lv / def.max) * 100)}%"></div></div>
+        ${perksHtml ? `<div class="upg-perks">${perksHtml}</div>` : ''}
       </div>
       <button class="btn-buy" ${maxed || wallet < cost ? 'disabled' : ''}>${maxed ? 'MAX' : `🪙 ${cost.toLocaleString()}`}</button>`;
     el.querySelector('button').addEventListener('click', () => {
@@ -3841,6 +4108,7 @@ function renderUpgrades() {
       saveWallet();
       saveUpg();
       sfx.buy();
+      if (def.perks && def.perks[upg[key]]) showUpgToast(def.perks[upg[key]]); // 마일스톤 도달!
       renderUpgrades();
     });
     list.appendChild(el);
@@ -3933,19 +4201,22 @@ function renderMe() {
 
   if (meTab === 'base') {
     // 실효 수치 스탯 그리드 (강화·캐릭터 능력 반영)
-    const jumpPct = upg.jump * 2 + (curChar === 'rabbit' ? 10 : 0);
-    const coinPct = upg.coinup * 5 + (curChar === 'penguin' ? 10 : 0);
+    const jumpPct = +(upg.jump * 0.4 + (curChar === 'rabbit' ? 10 : 0)).toFixed(1);
+    const coinPct = upg.coinup + (curChar === 'penguin' ? 10 : 0);
     const cell = (icon, name, val, boost) =>
       `<div class="stat-cell${boost ? ' boost' : ''}"><span>${icon} ${name}</span><b>${val}</b></div>`;
     $('me-info').innerHTML = `<div class="stat-grid">
       ${cell('🦵', '점프력', jumpPct > 0 ? `+${jumpPct}%` : '기본', jumpPct > 0)}
+      ${cell('🪽', '더블 점프', !hasDoubleJump() ? '🔒 Lv10' : upg.jump >= 50 ? '2회!' : upg.jump >= 30 ? '스프링급' : '1회', hasDoubleJump())}
       ${cell('💰', '코인 획득', coinPct > 0 ? `+${coinPct}%` : '기본', coinPct > 0)}
-      ${cell('🔫', '탄창', `${ammoMax()}발`, upg.ammo > 0)}
+      ${cell('🔫', '탄창', `${ammoMax()}발${hasDoubleShot() ? ' ×2' : ''}`, upg.ammo > 0)}
+      ${cell('⚡', '번개', upg.thunder > 0 ? `콤보${thunderNeed()} ${thunderBolts()}발` : '🔒 미해금', upg.thunder > 0)}
+      ${cell('🛡️', '보호막', shieldMax() > 0 ? `${shieldMax()}회/판` : '🔒 미해금', shieldMax() > 0)}
       ${cell('⏱️', '재장전', `${(reloadTime() / 60).toFixed(2)}초`, upg.reload > 0)}
-      ${cell('🧲', '기본 자석', upg.magnet > 0 ? `${[0, 45, 65, 85][upg.magnet]}px` : '없음', upg.magnet > 0)}
-      ${cell('🧯', '내열', upg.fireslow > 0 ? `-${upg.fireslow * 8}%` : '기본', upg.fireslow > 0)}
-      ${cell('❤️', '부활 무적', `${((REVIVE_INVINCIBLE + upg.revive * 60) / 60).toFixed(0)}초`, upg.revive > 0)}
-      ${cell('🚀', '출발 부스트', upg.rocket > 0 ? `${(upg.rocket * 0.5).toFixed(1)}초` : '없음', upg.rocket > 0)}
+      ${cell('🧲', '기본 자석', upg.magnet > 0 ? `${28 + upg.magnet * 2}px` : '없음', upg.magnet > 0)}
+      ${cell('🧯', '내열', upg.fireslow > 0 ? `-${(upg.fireslow * 0.8).toFixed(1)}%` : '기본', upg.fireslow > 0)}
+      ${cell('❤️', '부활 무적', `${((REVIVE_INVINCIBLE + Math.round(upg.revive * 3.6)) / 60).toFixed(1)}초`, upg.revive > 0)}
+      ${cell('🚀', '출발 부스트', upg.rocket > 0 ? `+${(upg.rocket * 0.05).toFixed(2)}초` : '없음', upg.rocket > 0)}
       ${cell('⭐', '스타 목표', `${starGoalNow()}개`, upg.star > 0)}
       ${cell('🐾', '특성', C.name === '둥이' ? '밸런스' : C.desc.split(' ·')[0], curChar !== 'dungi')}
     </div>`;
