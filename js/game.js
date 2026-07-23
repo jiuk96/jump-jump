@@ -356,9 +356,9 @@ async function renderLeaderboard() {
   }
 }
 
-// ---------- 진동 ----------
-function vib(ms) {
-  try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {}
+// ---------- 진동 (숫자 또는 패턴 배열) ----------
+function vib(msOrPattern) {
+  try { if (navigator.vibrate) navigator.vibrate(msOrPattern); } catch (e) {}
 }
 
 // ---------- 배경음악 (칩튠 루프) ----------
@@ -1438,7 +1438,9 @@ function update() {
     bossShots = [];
     addFloat('👹 보스전! 좌우로 피하고 🔫 버튼으로 공격!', W / 2, 190, '#c0392b', 16, true);
     beep(70, 0.6, 'sawtooth', 0.22);
-    vib(100);
+    setTimeout(() => beep(55, 0.5, 'sawtooth', 0.2), 350);
+    vib([220, 80, 220, 80, 450]); // 드르륵 드르륵 드르르륵!
+    shakeT = 26; // 화면도 함께 흔들림 (진동 미지원 기기용)
   }
   if (boss) {
     boss.t--;
