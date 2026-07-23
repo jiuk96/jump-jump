@@ -75,6 +75,17 @@ function kstDateNum() { // 한국 시간 기준 오늘 날짜 (YYYYMMDD)
   return k.getUTCFullYear() * 10000 + (k.getUTCMonth() + 1) * 100 + k.getUTCDate();
 }
 
+// ---------- 설정 ----------
+let settings = { sfx: true, music: true, vib: true, tilt: 'mid', lefty: false };
+try { Object.assign(settings, JSON.parse(localStorage.getItem('jump-settings') || '{}')); } catch (e) {}
+function saveSettings() {
+  localStorage.setItem('jump-settings', JSON.stringify(settings));
+  applySettings();
+}
+function applySettings() {
+  document.getElementById('game-container').classList.toggle('lefty', settings.lefty);
+}
+
 // ---------- 캔버스 ----------
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -148,7 +159,7 @@ function starGoalNow() { return STAR_GOAL - upg.star; }
 
 // ---------- 사운드 (Web Audio 간단 효과음) ----------
 let audioCtx = null;
-function beep(freq, dur = 0.08, type = 'square', vol = 0.15) {
+function tone(freq, dur = 0.08, type = 'square', vol = 0.15) {
   try {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -162,6 +173,10 @@ function beep(freq, dur = 0.08, type = 'square', vol = 0.15) {
     o.start();
     o.stop(audioCtx.currentTime + dur);
   } catch (e) { /* 사운드 실패는 무시 */ }
+}
+function beep(freq, dur = 0.08, type = 'square', vol = 0.15) {
+  if (!settings.sfx) return;
+  tone(freq, dur, type, vol);
 }
 const sfx = {
   jump: () => beep(500, 0.07, 'square', 0.12),
@@ -217,6 +232,7 @@ const ACHIEVEMENTS = [
   { id: 'runs50', name: '끈기의 둥이', desc: '50판 플레이', target: 50, get: (s) => s.runs, reward: 150 },
   { id: 'total100k', name: '마라토너', desc: '누적 100,000점 오르기', target: 100000, get: (s) => s.totalScore, reward: 300 },
   { id: 'revive3', name: '불사조', desc: '생명으로 3회 부활', target: 3, get: (s) => s.revives, reward: 100 },
+  { id: 'moon', name: '달 정복자', desc: '달에 착륙하기 (30,000점)', target: 1, get: (s) => (s.moon ? 1 : 0), reward: 500 },
 ];
 
 const achToast = []; // 달성 알림 대기열
@@ -356,15 +372,37 @@ async function renderLeaderboard() {
   }
 }
 
+// ---------- 도감 ----------
+const DEX = {
+  plat_normal: ['🟢', '초록 발판'], plat_moving: ['🔵', '파란 발판'],
+  plat_oneshot: ['⚪', '흰 발판'], plat_ice: ['🧊', '얼음 발판'], plat_breaking: ['🟤', '갈색 발판'],
+  coin: ['🪙', '코인'], star: ['⭐', '별'], rainbow: ['🌈', '무지개 코인'],
+  spring: ['🔺', '스프링'], jetpack: ['🚀', '제트팩'], cannon: ['🎯', '대포'], sstar: ['💫', '별똥별'],
+  bug: ['👾', '몬스터'], ufo: ['🛸', 'UFO'], blackhole: ['🕳️', '블랙홀'],
+  dizzy: ['😵', '어지럼 구름'], bossmon: ['👹', '보스'],
+  rain: ['🌧️', '비'], snow: ['❄️', '눈'], wind: ['💨', '강풍'], moon: ['🌕', '달'],
+};
+let dex = new Set();
+try { JSON.parse(localStorage.getItem('jump-dex') || '[]').forEach((d) => dex.add(d)); } catch (e) {}
+function dexAdd(id) {
+  if (dex.has(id) || !DEX[id]) return;
+  dex.add(id);
+  localStorage.setItem('jump-dex', JSON.stringify([...dex]));
+  if (state === State.PLAYING) {
+    addFloat(`📖 도감 등록: ${DEX[id][0]} ${DEX[id][1]}`, W / 2, 250, '#16a085', 14, true, 140);
+  }
+}
+
 // ---------- 진동 (숫자 또는 패턴 배열) ----------
 function vib(msOrPattern) {
+  if (!settings.vib) return;
   try { if (navigator.vibrate) navigator.vibrate(msOrPattern); } catch (e) {}
 }
 
 // ---------- 배경음악 (칩튠 루프) ----------
 // 32스텝 시퀀서: 멜로디(사각파) + 베이스(삼각파) + 하이 블립 퍼커션
 const bgm = {
-  on: localStorage.getItem('jump-bgm') !== '0',
+  get on() { return settings.music; },
   timer: null,
   step: 0,
   // 0 = 쉼표. 경쾌한 C장조 루프
@@ -388,23 +426,37 @@ const bgm = {
     } catch (e) { return; }
     this.timer = setInterval(() => {
       const i = this.step++;
+      // 우주(13,500점~)에선 느리고 몽환적인 멜로디
+      if (state === State.PLAYING && score > 13500) {
+        if (i % 2) return; // 반 박자 템포
+        const m = this.MEL_SPACE[(i >> 1) % 32];
+        if (m) {
+          tone(m, 0.5, 'triangle', 0.09);
+          tone(m * 1.5, 0.5, 'sine', 0.03);
+        }
+        return;
+      }
       const m = this.MEL[i % 32];
       const b = this.BASS[i % 32];
       if (m) {
-        beep(m, 0.16, 'square', 0.075);
-        beep(m * 2, 0.16, 'square', 0.018); // 옥타브 위 살짝 겹쳐 풍성하게
+        tone(m, 0.16, 'square', 0.075);
+        tone(m * 2, 0.16, 'square', 0.018); // 옥타브 위 살짝 겹쳐 풍성하게
       }
-      if (b) beep(b, 0.3, 'triangle', 0.11);
-      if (i % 4 === 2) beep(2093, 0.03, 'square', 0.02); // 퍼커션 블립
+      if (b) tone(b, 0.3, 'triangle', 0.11);
+      if (i % 4 === 2) tone(2093, 0.03, 'square', 0.02); // 퍼커션 블립
     }, 150);
   },
   stop() {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
   },
+  MEL_SPACE: [
+    392, 0, 494, 0, 587, 0, 659, 0, 587, 0, 494, 0, 440, 0, 494, 0,
+    392, 0, 494, 0, 659, 0, 784, 0, 659, 0, 587, 0, 494, 0, 440, 0,
+  ],
   toggle() {
-    this.on = !this.on;
-    localStorage.setItem('jump-bgm', this.on ? '1' : '0');
+    settings.music = !settings.music;
+    saveSettings();
     if (!this.on) this.stop();
     else if (state === State.PLAYING || state === State.COUNTDOWN) this.start();
   },
@@ -577,6 +629,7 @@ function updateWeather() {
       const winterBias = SEASON === 'winter' ? 0.25 : 0;
       const type = score > 8000 ? 'snow' : (Math.random() < 0.55 - winterBias ? 'rain' : 'snow');
       weather = { type, t: Math.round(rand(480, 750)) };
+      dexAdd(type);
     }
   }
   for (const w of weatherDrops) {
@@ -601,7 +654,7 @@ function updateWeather() {
 }
 
 // ---------- 게임 상태 ----------
-const State = { MENU: 0, PLAYING: 1, PAUSED: 2, OVER: 3, COUNTDOWN: 4, RPS: 5 };
+const State = { MENU: 0, PLAYING: 1, PAUSED: 2, OVER: 3, COUNTDOWN: 4, RPS: 5, ENDING: 6 };
 let state = State.MENU;
 let countdownUntil = 0; // 카운트다운 종료 시각 (performance.now 기준)
 
@@ -656,6 +709,21 @@ let ammo;              // 남은 총알 (탄창 10발)
 let reloading;         // 재장전 남은 프레임
 let jetpackSlow;       // 시작 로켓은 천천히 상승
 let rpsUsed;           // 가위바위보 부활 기회 (판당 1회)
+let milestoneIdx;      // 구간 이정표 진행
+let endingStarted;     // 달 착륙 엔딩
+let endingT = 0;
+let cleared = false;   // 이번 판 클리어 여부
+let dying = 0;         // 죽음 슬로모션 프레임
+let deathSpin = 0;
+let runMaxCombo, runKills, runBosses, runStars; // 이번 판 통계
+
+const MILESTONES = [
+  [3500, '☁️ 구름을 지나 하늘 높이!'],
+  [8500, '🌤️ 성층권 진입!'],
+  [13500, '🌌 우주 도달! 무중력 구간!'],
+  [22000, '🌕 달이 보인다!'],
+];
+const MOON_SCORE = 30000;
 const AMMO_MAX = 10;
 const RELOAD_TIME = 95; // 약 1.6초
 let bossShots;         // 보스 투사체
@@ -727,7 +795,8 @@ canvas.addEventListener('touchend', (e) => {
 let tiltTarget = 0;
 window.addEventListener('deviceorientation', (e) => {
   if (controlMode !== 'tilt') { tiltTarget = 0; input.tilt = 0; return; }
-  if (e.gamma != null) tiltTarget = clamp(e.gamma / 25, -1, 1);
+  const div = { low: 34, mid: 25, high: 18 }[settings.tilt] || 25;
+  if (e.gamma != null) tiltTarget = clamp(e.gamma / div, -1, 1);
 });
 
 // iOS 13+ 은 사용자 제스처에서 권한 요청 필요
@@ -814,6 +883,16 @@ function newGame() {
   reloading = 0;
   jetpackSlow = false;
   rpsUsed = false;
+  milestoneIdx = 0;
+  endingStarted = false;
+  endingT = 0;
+  cleared = false;
+  dying = 0;
+  deathSpin = 0;
+  runMaxCombo = 0;
+  runKills = 0;
+  runBosses = 0;
+  runStars = 0;
 
   // 들고 들어가는 아이템: 생명은 보유분 그대로, 로켓/자석은 있으면 1개 자동 사용
   lives = inv.life;
@@ -921,6 +1000,7 @@ function spawnPlatformRow() {
       hp: isUfo ? 2 : 1,
       baseY: y - 40,
     });
+    dexAdd(isUfo ? 'ufo' : 'bug');
   }
 
   // 블랙홀: 6000점부터 드물게 — 발판에서 멀리 떨어진 곳에만 생성
@@ -935,6 +1015,7 @@ function spawnPlatformRow() {
       });
       if (!tooClose) {
         blackholes.push({ x: bx, y: by, r: 24, spin: 0 });
+        dexAdd('blackhole');
         break;
       }
     }
@@ -1073,12 +1154,14 @@ function tryRevive() {
     checkAchievements();
     return true;
   }
-  // 마지막 기회: 가위바위보! (판당 1회)
-  if (!rpsUsed) {
-    openRps();
-    return false;
+  // 죽음 슬로모션 → 가위바위보(1회) 또는 게임오버
+  if (dying <= 0) {
+    dying = 46;
+    deathSpin = 0;
+    shakeT = Math.max(shakeT, 10);
+    sfx.die();
+    vib(120);
   }
-  gameOver();
   return false;
 }
 
@@ -1151,6 +1234,39 @@ function playRps(mine) {
 // ---------- 업데이트 ----------
 function update() {
   frame++;
+
+  // 죽음 슬로모션: 잠시 느리게 떨어지며 빙글 돈 뒤 가위바위보/게임오버
+  if (dying > 0) {
+    dying--;
+    deathSpin += 0.13;
+    player.y += 2.2;
+    if (dying === 0) {
+      if (!rpsUsed) openRps();
+      else gameOver();
+    }
+    return;
+  }
+
+  // 구간 이정표
+  if (milestoneIdx < MILESTONES.length && score >= MILESTONES[milestoneIdx][0]) {
+    addFloat(MILESTONES[milestoneIdx][1], W / 2, 190, '#2c3e50', 18, true, 190);
+    beep(760, 0.12, 'square', 0.12);
+    setTimeout(() => beep(980, 0.16, 'square', 0.12), 130);
+    milestoneIdx++;
+  }
+
+  // 달 착륙 엔딩! (30,000점)
+  if (!endingStarted && !boss && score >= MOON_SCORE) {
+    endingStarted = true;
+    state = State.ENDING;
+    endingT = 0;
+    bgm.stop();
+    pauseBtn.classList.add('hidden');
+    fireBtn.classList.add('hidden');
+    sfx.bonus();
+    vib([100, 80, 100, 80, 300]);
+    return;
+  }
   if (invincible > 0) invincible--;
 
   // --- 대포 안에 있을 때: 조준만 하고 물리 정지 ---
@@ -1207,10 +1323,6 @@ function update() {
 
   // --- 중력/제트팩 (우주에선 무중력에 가깝게 둥실둥실) ---
   const gravity = score > 13500 ? GRAVITY * 0.55 : GRAVITY;
-  if (score > 13500 && !spaceAnnounced) {
-    spaceAnnounced = true;
-    addFloat('🌌 무중력 구간! 둥실둥실~', W / 2, 190, '#dfe6e9', 17, true);
-  }
   if (holdCannon || standPlat) {
     // 대포 안/보스전 서기: 중력 없음
   } else if (jetpackTimer > 0) {
@@ -1242,6 +1354,15 @@ function update() {
           continue; // 튕기지 않고 통과
         }
         player.y = p.y - player.h / 2;
+        dexAdd('plat_' + p.type);
+        p.squashT = 12; // 밟히면 살짝 눌리는 애니메이션
+        for (let di = 0; di < 4; di++) { // 착지 먼지
+          particles.push({
+            x: player.x + rand(-14, 14), y: p.y - 2,
+            vx: rand(-1.2, 1.2), vy: rand(-0.8, -0.2),
+            life: rand(10, 18), color: 'rgba(255,255,255,0.8)',
+          });
+        }
         // 보스전: 튕기지 않고 발판 위에 선다 — 회피와 공격에 집중!
         if (boss) {
           standPlat = p;
@@ -1256,9 +1377,11 @@ function update() {
           p.jetpack = false;
           jetpackTimer = JETPACK_TIME;
           jetpackSlow = false;
+          dexAdd('jetpack');
           sfx.jetpack();
         } else if (p.spring) {
           player.vy = SPRING_VY;
+          dexAdd('spring');
           sfx.spring();
         } else {
           player.vy = jumpV();
@@ -1279,6 +1402,7 @@ function update() {
         // 콤보: 새 발판 연속 밟기
         if (fresh) {
           combo++;
+          if (combo > runMaxCombo) runMaxCombo = combo;
           if (combo > stats.maxCombo) { stats.maxCombo = combo; saveStats(); checkAchievements(); }
           if (combo >= 5) score += Math.min(combo, 30); // 콤보 보너스 점수
           if (combo % 10 === 0) {
@@ -1329,6 +1453,7 @@ function update() {
       p.x += p.vx;
       if (p.x < 0 || p.x + p.w > W) p.vx *= -1;
     }
+    if (p.squashT > 0) p.squashT--;
     if (p.pulse) {
       // 중심을 유지하며 늘었다 줄었다 (0.72x ~ 1.08x)
       const newW = p.baseW * (0.9 + 0.18 * Math.sin(frame * 0.045 + p.pulsePhase));
@@ -1370,6 +1495,8 @@ function update() {
       c.taken = true;
       if (c.type === 'star') {
         starCount++;
+        runStars++;
+        dexAdd('star');
         sfx.spring();
         addBurst(c.x, c.y, '#ffd832');
         if (tut && !tut.star) {
@@ -1378,6 +1505,7 @@ function update() {
         }
         if (starCount >= starGoalNow()) starPower();
       } else if (c.type === 'rainbow') {
+        dexAdd('rainbow');
         runCoins += 5;
         wallet += 5;
         stats.coins += 5;
@@ -1398,6 +1526,7 @@ function update() {
         sfx.coin();
         particles.push({ x: c.x, y: c.y, vx: 0, vy: -1.5, life: 18, color: '#f1c40f' });
         missionEvent('Coin');
+        dexAdd('coin');
         if (tut && !tut.coin) {
           tut.coin = true;
           addFloat('코인으로 상점에서 아이템을 사요! 🪙', W / 2, 190, '#b7791f', 16, true);
@@ -1436,6 +1565,7 @@ function update() {
     if (dc.used) continue;
     if (Math.abs(player.x - dc.x) < dc.w / 2 + 10 && Math.abs(player.y - dc.y) < dc.h / 2 + 14) {
       dc.used = true;
+      dexAdd('dizzy');
       reversedT = 190;
       addFloat('어지러워~! 조작 반전!', player.x, player.y - 44, '#a55eea', 16);
       sfx.break();
@@ -1453,6 +1583,7 @@ function update() {
       if (cn.fired) continue;
       if (player.vy > 0 && Math.hypot(player.x - cn.x, player.y - cn.y) < 28) {
         holdCannon = cn;
+        dexAdd('cannon');
         cn.timer = 130; // 약 2초 뒤 자동 발사
         combo = 0;
         sfx.break();
@@ -1475,6 +1606,7 @@ function update() {
   } else if (score > 2500 && score < 13500 && !boss) {
     if (--windWait <= 0) {
       windState = { dir: Math.random() < 0.5 ? -1 : 1, warnT: 90, t: 430 };
+      dexAdd('wind');
       sfx.break();
     }
   }
@@ -1509,6 +1641,7 @@ function update() {
     // 별똥별은 잡으면 보너스 코인!
     if (a.type === 'shootingstar' && Math.hypot(player.x - a.x, player.y - a.y) < 30) {
       a.gone = true;
+      dexAdd('sstar');
       runCoins += 5;
       wallet += 5;
       stats.coins += 5;
@@ -1536,6 +1669,7 @@ function update() {
       wobble: 0,
     };
     nextBossAt += 8000;
+    dexAdd('bossmon');
     // 보스 아레나: 일반 발판은 잠시 사라지고, 화면 전체를 덮는 일자 땅이 생긴다
     const floor = makePlatform(0, cameraY + 568, PlatType.NORMAL);
     floor.x = 0;
@@ -1656,6 +1790,7 @@ function update() {
           addBurst(m.x, m.y, '#9b59b6');
           missionEvent('Kill');
           stats.kills++;
+          runKills++;
           saveStats();
           checkAchievements();
         }
@@ -1684,6 +1819,7 @@ function update() {
         stats.coins += reward;
         saveWallet();
         score += 300; // 격파 보너스 점수
+        runBosses++;
         missionFlash = 140;
         flashMain = '👹 보스 격파!';
         flashSub = `+${reward}🪙 +300점`;
@@ -1707,6 +1843,7 @@ function update() {
           addBurst(m.x, m.y, m.kind === 'ufo' ? '#95afc0' : '#9b59b6');
           missionEvent('Kill');
           stats.kills++;
+          runKills++;
           saveStats();
           checkAchievements();
         } else {
@@ -1956,6 +2093,12 @@ function drawPlatform(p) {
   if (boss && !p.arena) return; // 보스전 중 일반 발판 숨김
   const y = p.y - cameraY;
   ctx.save();
+  if (p.squashT > 0) { // 밟힌 직후 눌림 효과
+    const sq = Math.sin((p.squashT / 12) * Math.PI);
+    ctx.translate(p.x + p.w / 2, y + p.h);
+    ctx.scale(1 + 0.09 * sq, 1 - 0.26 * sq);
+    ctx.translate(-(p.x + p.w / 2), -(y + p.h));
+  }
   if (p.broken && p.type === PlatType.BREAKING) {
     // 부서지는 애니메이션: 두 조각으로 갈라져 떨어짐
     const fall = p.breakAnim * p.breakAnim * 0.15;
@@ -2584,6 +2727,11 @@ function drawPlayer() {
   const x = player.x, y = player.y - cameraY - hop;
   ctx.save();
   ctx.translate(x, y);
+  if (dying > 0) {
+    ctx.rotate(deathSpin); // 죽을 땐 빙글빙글
+  } else {
+    ctx.rotate(clamp(player.vx * 0.03, -0.22, 0.22)); // 이동 방향으로 살짝 기울기
+  }
 
   // 부활 무적: 깜빡임 (보너스 비행 중에는 깜빡이지 않음)
   if (invincible > 0 && jetpackTimer <= 0 && Math.floor(invincible / 6) % 2 === 0) {
@@ -3064,6 +3212,83 @@ function draw() {
     ctx.fillRect(0, 0, W, H);
   }
 
+  // 달 착륙 엔딩 연출
+  if (state === State.ENDING) {
+    const t = endingT;
+    // 우주 배경
+    ctx.fillStyle = `rgba(8, 8, 32, ${clamp(t / 60, 0, 1)})`;
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    for (let i = 0; i < 40; i++) {
+      ctx.fillRect((i * 97 + 23) % W, (i * 61 + ((t * 0.2) | 0)) % H, 2, 2);
+    }
+    // 달이 아래에서 떠오름
+    const moonY = H + 160 - clamp(t / 140, 0, 1) * 480;
+    const mg = ctx.createRadialGradient(W / 2 - 30, moonY - 40, 20, W / 2, moonY, 170);
+    mg.addColorStop(0, '#fdfbe8');
+    mg.addColorStop(1, '#cfc9a8');
+    ctx.fillStyle = mg;
+    ctx.beginPath();
+    ctx.arc(W / 2, moonY, 160, 0, Math.PI * 2);
+    ctx.fill();
+    // 크레이터
+    ctx.fillStyle = 'rgba(180, 172, 140, 0.6)';
+    for (const [cx2, cy2, r2] of [[-60, -50, 18], [40, -90, 12], [80, -20, 22], [-20, 10, 10]]) {
+      ctx.beginPath();
+      ctx.arc(W / 2 + cx2, moonY + cy2, r2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (t > 130) {
+      // 둥이 착륙 + 깃발
+      const img = charImgs.left;
+      if (img) ctx.drawImage(img, W / 2 - 50, moonY - 160 - 46, 52, 52);
+      ctx.strokeStyle = '#8d6e63';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(W / 2 + 22, moonY - 158);
+      ctx.lineTo(W / 2 + 22, moonY - 210);
+      ctx.stroke();
+      ctx.fillStyle = '#e74c3c';
+      ctx.beginPath();
+      ctx.moveTo(W / 2 + 24, moonY - 210);
+      ctx.lineTo(W / 2 + 62, moonY - 199);
+      ctx.lineTo(W / 2 + 24, moonY - 188);
+      ctx.fill();
+    }
+    if (t > 180) {
+      ctx.font = '900 30px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 6;
+      ctx.strokeText('🌕 달 착륙 성공!', W / 2, 150);
+      ctx.fillStyle = '#f6b93b';
+      ctx.fillText('🌕 달 착륙 성공!', W / 2, 150);
+      ctx.font = '800 17px sans-serif';
+      ctx.strokeText('둥이는 해냈습니다!', W / 2, 186);
+      ctx.fillStyle = '#fff';
+      ctx.fillText('둥이는 해냈습니다!', W / 2, 186);
+    }
+    // 색종이
+    if (t > 180) {
+      for (let i = 0; i < 24; i++) {
+        const px = (i * 53 + t * ((i % 3) + 1)) % W;
+        const py = (i * 91 + t * 2) % H;
+        ctx.fillStyle = `hsl(${(i * 47) % 360}, 85%, 65%)`;
+        ctx.fillRect(px, py, 5, 8);
+      }
+    }
+  }
+
+  // 죽음 슬로모션: 붉은 비네트
+  if (dying > 0) {
+    const dv = ctx.createRadialGradient(W / 2, H / 2, H * 0.25, W / 2, H / 2, H * 0.75);
+    dv.addColorStop(0, 'rgba(180, 30, 30, 0)');
+    dv.addColorStop(1, `rgba(150, 20, 20, ${0.45 * (1 - dying / 46)})`);
+    ctx.fillStyle = dv;
+    ctx.fillRect(0, 0, W, H);
+  }
+
   // 카운트다운: 큰 숫자 표시
   if (state === State.COUNTDOWN) {
     const remain = countdownUntil - performance.now();
@@ -3203,6 +3428,19 @@ function loop(now) {
     if (menuHop > 0) menuHop--;
     for (const f of floatTexts) f.life--;
     floatTexts = floatTexts.filter((f) => f.life > 0);
+    // 달 착륙 엔딩 진행
+    if (state === State.ENDING) {
+      endingT++;
+      if (endingT === 200) sfx.bonus();
+      if (endingT > 400) {
+        cleared = true;
+        stats.moon = true;
+        dexAdd('moon');
+        saveStats();
+        checkAchievements();
+        gameOver();
+      }
+    }
   }
   draw();
   rafId = requestAnimationFrame(loop);
@@ -3236,7 +3474,9 @@ fireBtn.addEventListener('mousedown', (e) => {
 });
 
 function refreshMenu() {
-  $('best-score-label').textContent = best > 0 ? `최고 기록 ${best}` : '';
+  const title = localStorage.getItem('jump-title');
+  $('best-score-label').textContent =
+    (title ? `🎖️ ${title}` : '') + (best > 0 ? `${title ? ' · ' : ''}최고 기록 ${best}` : '');
   $('wallet-label').textContent = `🪙 ${wallet}`;
   refreshControlUI();
 }
@@ -3377,6 +3617,33 @@ function renderChars() {
   }
 }
 
+// ---------- 도감 화면 ----------
+function renderDex() {
+  const grid = $('dex-grid');
+  grid.innerHTML = '';
+  const total = Object.keys(DEX).length;
+  $('dex-count').textContent = `발견: ${dex.size} / ${total}`;
+  for (const [id, [emoji, name]] of Object.entries(DEX)) {
+    const found = dex.has(id);
+    const el = document.createElement('div');
+    el.className = 'dex-card' + (found ? '' : ' locked');
+    el.innerHTML = `<span class="dex-emoji">${found ? emoji : '❓'}</span><span class="dex-name">${found ? name : '???'}</span>`;
+    grid.appendChild(el);
+  }
+}
+
+// ---------- 설정 화면 ----------
+function refreshSettingsUI() {
+  const map = [
+    ['set-sfx-on', settings.sfx], ['set-sfx-off', !settings.sfx],
+    ['set-music-on', settings.music], ['set-music-off', !settings.music],
+    ['set-vib-on', settings.vib], ['set-vib-off', !settings.vib],
+    ['set-tilt-low', settings.tilt === 'low'], ['set-tilt-mid', settings.tilt === 'mid'], ['set-tilt-high', settings.tilt === 'high'],
+    ['set-hand-r', !settings.lefty], ['set-hand-l', settings.lefty],
+  ];
+  for (const [id, on] of map) $(id).classList.toggle('active', on);
+}
+
 // ---------- 도전과제 화면 ----------
 function renderAchievements() {
   const list = $('ach-list');
@@ -3386,14 +3653,24 @@ function renderAchievements() {
     const cur = Math.min(a.get(stats), a.target);
     const el = document.createElement('div');
     el.className = 'ach-item' + (done ? ' done' : '');
+    const curTitle = localStorage.getItem('jump-title') || '';
     el.innerHTML = `
       <div class="ach-top">
         <span class="ach-name">${done ? '✅ ' : ''}${a.name}</span>
-        <span class="ach-reward">🪙 ${a.reward}</span>
+        ${done ? `<button class="ach-title-btn${curTitle === a.name ? ' on' : ''}">${curTitle === a.name ? '대표 칭호 ✓' : '칭호로 설정'}</button>` : `<span class="ach-reward">🪙 ${a.reward}</span>`}
       </div>
       <div class="ach-desc">${a.desc}</div>
       <div class="ach-bar"><div style="width:${Math.round((cur / a.target) * 100)}%"></div></div>
       <div class="ach-prog">${cur.toLocaleString()} / ${a.target.toLocaleString()}</div>`;
+    const tbtn = el.querySelector('.ach-title-btn');
+    if (tbtn) tbtn.addEventListener('click', () => {
+      const now = localStorage.getItem('jump-title') === a.name;
+      if (now) localStorage.removeItem('jump-title');
+      else localStorage.setItem('jump-title', a.name);
+      sfx.buy();
+      renderAchievements();
+      refreshMenu();
+    });
     list.appendChild(el);
   }
 }
@@ -3495,9 +3772,8 @@ function resumeGame() {
 }
 
 function gameOver() {
-  if (state !== State.PLAYING && state !== State.RPS) return;
+  if (state !== State.PLAYING && state !== State.RPS && state !== State.ENDING) return;
   state = State.OVER;
-  sfx.die();
   vib(160);
   bgm.stop();
   const isRecord = score > best;
@@ -3516,9 +3792,13 @@ function gameOver() {
   if (score >= 14000) stats.space = true;
   saveStats();
   checkAchievements();
+  $('gameover-title').textContent = cleared ? '🌕 달 착륙 성공!' : '게임 오버';
   $('final-score').textContent = String(score);
   $('final-coins').textContent = String(runCoins);
   $('final-best').textContent = `최고 기록 ${best}`;
+  $('final-stats').textContent =
+    `🔥 최고 콤보 x${runMaxCombo} · 👾 처치 ${runKills}` +
+    (runBosses ? ` · 👹 보스 ${runBosses}` : '') + ` · ⭐ 별 ${runStars}`;
   $('new-record').classList.toggle('hidden', !isRecord);
   overScreen.classList.remove('hidden');
   pauseBtn.classList.add('hidden');
@@ -3536,6 +3816,8 @@ function goHome() {
   $('lb-screen').classList.add('hidden');
   $('upg-screen').classList.add('hidden');
   $('char-screen').classList.add('hidden');
+  $('settings-screen').classList.add('hidden');
+  $('dex-screen').classList.add('hidden');
   pauseBtn.classList.add('hidden');
   fireBtn.classList.add('hidden');
   startScreen.classList.remove('hidden');
@@ -3635,14 +3917,40 @@ $('btn-register').addEventListener('click', () => {
   if (askNickname()) autoSubmitScore();
 });
 
-function refreshBgmBtn() {
-  $('btn-bgm').textContent = bgm.on ? '🔊 음악 켜짐' : '🔇 음악 꺼짐';
-}
-$('btn-bgm').addEventListener('click', () => {
-  bgm.toggle();
-  refreshBgmBtn();
+$('btn-settings').addEventListener('click', () => {
+  startScreen.classList.add('hidden');
+  refreshSettingsUI();
+  $('settings-screen').classList.remove('hidden');
 });
-refreshBgmBtn();
+$('btn-settings-back').addEventListener('click', goHome);
+$('btn-dex').addEventListener('click', () => {
+  startScreen.classList.add('hidden');
+  renderDex();
+  $('dex-screen').classList.remove('hidden');
+});
+$('btn-dex-back').addEventListener('click', goHome);
+const SETTING_BTNS = {
+  'set-sfx-on': () => { settings.sfx = true; },
+  'set-sfx-off': () => { settings.sfx = false; },
+  'set-music-on': () => { settings.music = true; },
+  'set-music-off': () => { settings.music = false; bgm.stop(); },
+  'set-vib-on': () => { settings.vib = true; vib(60); },
+  'set-vib-off': () => { settings.vib = false; },
+  'set-tilt-low': () => { settings.tilt = 'low'; },
+  'set-tilt-mid': () => { settings.tilt = 'mid'; },
+  'set-tilt-high': () => { settings.tilt = 'high'; },
+  'set-hand-r': () => { settings.lefty = false; },
+  'set-hand-l': () => { settings.lefty = true; },
+};
+for (const [id, fn] of Object.entries(SETTING_BTNS)) {
+  $(id).addEventListener('click', () => {
+    fn();
+    saveSettings();
+    refreshSettingsUI();
+    sfx.buy();
+  });
+}
+applySettings();
 
 // 탭 전환 시 자동 일시정지
 document.addEventListener('visibilitychange', () => {
