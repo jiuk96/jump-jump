@@ -152,7 +152,7 @@ loadCharImages();
 // perks: 특정 레벨 도달 시 해금되는 특수 능력
 const UPGRADES = {
   jump: { name: '점프력', icon: '🦵', desc: '점프 높이 +0.4%/레벨', max: 50, base: 60, growth: 1.13,
-    perks: { 10: '✨ 더블 점프 해금 — 떨어질 때 탭!', 30: '⚡ 더블 점프가 스프링급으로!', 50: '🌟 더블 점프 2회!' } },
+    perks: { 10: '✨ 점프력 +3% 보너스 + 반짝이 점프 이펙트!', 30: '🌈 점프력 +3% 보너스 + 무지개 궤적!', 50: '💫 점프력 +4% 보너스 + 별빛 폭발!' } },
   ammo: { name: '총 강화', icon: '🔫', desc: '5레벨마다 탄창 +1발', max: 50, base: 70, growth: 1.13,
     perks: { 15: '🎯 관통탄 — 총알이 몬스터를 뚫음', 35: '💥 더블샷 — 두 발씩 발사' } },
   thunder: { name: '번개', icon: '⚡', desc: '콤보를 쌓으면 낙뢰가 적을 자동 타격 · 5레벨마다 필요 콤보 -1', max: 50, base: 150, growth: 1.14,
@@ -185,8 +185,7 @@ function reloadTime() { return Math.round(RELOAD_TIME * (1 - 0.01 * upg.reload))
 function coinValue() { return 1 + Math.floor(score / 10000); } // 높이 오를수록 코인 가치 상승
 
 // 마일스톤 해금: 강화 레벨이 일정 단계에 도달하면 특수 능력이 열린다
-function hasDoubleJump() { return upg.jump >= 10; }
-function airJumpsMax() { return upg.jump >= 50 ? 2 : 1; }
+function jumpFxTier() { return upg.jump >= 50 ? 3 : upg.jump >= 30 ? 2 : upg.jump >= 10 ? 1 : 0; } // 점프 이펙트 단계
 function hasPierce() { return upg.ammo >= 15; }
 function hasDoubleShot() { return upg.ammo >= 35; }
 function thunderNeed() { return Math.max(5, 14 - Math.floor(upg.thunder / 5)); }
@@ -197,7 +196,9 @@ function hasGoldenTouch() { return upg.coinup >= 40; }
 
 // 강화·캐릭터 효과 적용 헬퍼
 function jumpV() {
-  return JUMP_VY * (1 + upg.jump * 0.004 + (curChar === 'rabbit' ? 0.10 : 0));
+  // 마일스톤 보너스: Lv10 +3%, Lv30 +3%, Lv50 +4% (레벨당 0.4%와 별도)
+  const ms = (upg.jump >= 10 ? 0.03 : 0) + (upg.jump >= 30 ? 0.03 : 0) + (upg.jump >= 50 ? 0.04 : 0);
+  return JUMP_VY * (1 + upg.jump * 0.004 + ms + (curChar === 'rabbit' ? 0.10 : 0));
 }
 function magnetRangeNow() {
   const base = (upg.magnet > 0 ? 28 + upg.magnet * 2 : 0) + (curChar === 'fox' ? 40 : 0); // 여우: 자석 +40px
@@ -298,12 +299,11 @@ const ACHIEVEMENTS = [
   { id: 'revive10', name: '오뚝이', desc: '생명으로 10회 부활', target: 10, get: (s) => s.revives, reward: 200 },
   { id: 'daily5', name: '성실한 도전자', desc: '데일리 챌린지 5회 참가', target: 5, get: (s) => s.dailyRuns || 0, reward: 200 },
   { id: 'dex15', name: '탐구자', desc: '도감 15종 완성', target: 15, get: () => dex.size, reward: 300 },
-  { id: 'dexall', name: '도감의 지배자', desc: '도감 33종 전부 완성', target: 33, get: () => dex.size, reward: 1000 },
+  { id: 'dexall', name: '도감의 지배자', desc: '도감 32종 전부 완성', target: 32, get: () => dex.size, reward: 1000 },
   { id: 'upg50', name: '강화 견습생', desc: '강화 레벨 합계 50 달성', target: 50, get: () => Object.values(upg).reduce((a, b) => a + b, 0), reward: 300 },
   { id: 'upg200', name: '강화의 신', desc: '강화 레벨 합계 200 달성', target: 200, get: () => Object.values(upg).reduce((a, b) => a + b, 0), reward: 800 },
   { id: 'char6', name: '동물 친구들', desc: '캐릭터 6종 보유', target: 6, get: () => ownedChars.size, reward: 300 },
   { id: 'char9', name: '드림팀 감독', desc: '캐릭터 9종 전부 보유', target: 9, get: () => ownedChars.size, reward: 800 },
-  { id: 'dj100', name: '날개 돋친 듯', desc: '더블 점프 누적 100회', target: 100, get: () => dexN.djump || 0, reward: 300 },
   { id: 'bolt50', name: '뇌신', desc: '낙뢰로 누적 50마리 처치', target: 50, get: () => dexN.bolt || 0, reward: 400 },
   { id: 'shield20', name: '철벽 수비수', desc: '보호막으로 20회 방어', target: 20, get: () => dexN.shieldhit || 0, reward: 300 },
   { id: 'rps3', name: '가위바위보 달인', desc: '가위바위보 부활전 3회 승리', target: 3, get: () => dexN.rpswin || 0, reward: 200 },
@@ -506,7 +506,7 @@ const DEX = {
   rain: ['🌧️', '비', 8, '만나기'], snow: ['🌨️', '눈', 8, '만나기'], wind: ['💨', '강풍', 10, '버티기'],
   moon: ['🌕', '달', 1, '착륙'],
   gem: ['💎', '보석', 10, '모으기 (코인 부스터 Lv20)'], bolt: ['🌩️', '낙뢰', 15, '번개 강화로 처치'],
-  shieldhit: ['🛡️', '보호막', 10, '피격 방어'], djump: ['🪽', '더블 점프', 30, '사용 (점프력 Lv10)'],
+  shieldhit: ['🛡️', '보호막', 10, '피격 방어'],
   gold: ['✨', '골든 터치', 10, '발판에서 코인 (Lv40)'], rpswin: ['✊', '가위바위보', 3, '부활전 승리'],
   fire: ['🌋', '불길', 15, '만나기'], grav: ['🌌', '무중력', 5, '우주 도달'],
   boss2: ['🔥', '화염 대왕', 2, '2번째 보스 격파'], boss3: ['❄️', '얼음 마왕', 2, '3번째 보스 격파'],
@@ -852,7 +852,6 @@ let cleared = false;   // 이번 판 클리어 여부
 let dying = 0;         // 죽음 슬로모션 프레임
 let deathSpin = 0;
 let runMaxCombo, runKills, runBosses, runStars; // 이번 판 통계
-let airJumps;          // 남은 공중(더블) 점프 (점프력 Lv10 해금)
 let thunderCombo;      // 번개 충전 콤보 (번개 강화)
 let shieldCharges;     // 남은 보호막 (보호막 강화)
 let boltFx;            // 낙뢰 연출 [{x,y,life,seed}]
@@ -980,7 +979,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'ArrowRight') input.right = true;
   if (e.code === 'ArrowUp') {
     e.preventDefault();
-    if (state === State.PLAYING) { if (runnerMode) runnerJump(); else tryAirJump(); }
+    if (state === State.PLAYING && runnerMode) runnerJump();
   }
   if (e.code === 'ArrowDown' && runnerMode) {
     e.preventDefault();
@@ -1015,14 +1014,13 @@ canvas.addEventListener('touchstart', (e) => {
     shoot();
     return;
   }
-  if (controlMode === 'tilt') { tryAirJump(); return; } // 기울이기 모드: 탭=더블 점프, 발사는 🔫 버튼
+  if (controlMode === 'tilt') return; // 기울이기 모드: 발사는 🔫 버튼으로
   const rect = canvas.getBoundingClientRect();
   const t = e.changedTouches[0];
   const x = t.clientX - rect.left;
   touchSide = x < rect.width / 2 ? 'left' : 'right';
   input.left = touchSide === 'left';
   input.right = touchSide === 'right';
-  tryAirJump(); // 떨어지는 중 탭 → 더블 점프 (점프력 Lv10 해금)
 }, { passive: false });
 canvas.addEventListener('touchend', (e) => {
   e.preventDefault();
@@ -1141,7 +1139,6 @@ function newGame() {
   fireY = H + 420;
   fireOn = false;
   fireAnnounced = false;
-  airJumps = airJumpsMax();
   thunderCombo = 0;
   shieldCharges = shieldMax();
   boltFx = [];
@@ -1301,25 +1298,20 @@ function spawnPlatformRow() {
   highestPlatY = y;
 }
 
-// ---------- 더블 점프 (점프력 Lv10 해금) ----------
-function tryAirJump() {
-  if (!hasDoubleJump() || state !== State.PLAYING) return false;
-  if (boss || holdCannon || standPlat || jetpackTimer > 0 || dying > 0) return false;
-  if (player.vy < 1.5 || airJumps <= 0) return false; // 떨어지는 중에만 사용 가능
-  airJumps--;
-  player.vy = upg.jump >= 30 ? SPRING_VY * 0.85 : jumpV() * 0.92;
-  sfx.spring();
-  vib(25);
-  for (let i = 0; i < 8; i++) {
+// ---------- 점프 이펙트 (점프력 마일스톤): 뛸 때마다 화려하게! ----------
+function addJumpFx() {
+  const t = jumpFxTier();
+  if (t === 0) return;
+  // Lv10+: 반짝이 입자
+  for (let i = 0; i < 4 + t * 2; i++) {
     particles.push({
-      x: player.x + rand(-14, 14), y: player.y + player.h / 2,
-      vx: rand(-1.5, 1.5), vy: rand(0.5, 2),
-      life: rand(12, 20), color: '#aee6ff',
+      x: player.x + rand(-15, 15), y: player.y + player.h / 2,
+      vx: rand(-1.7, 1.7), vy: rand(-0.6, 1.3),
+      life: rand(14, 26),
+      color: t >= 2 ? `hsl(${Math.floor(rand(0, 360))}, 90%, 65%)` : '#ffd832',
     });
   }
-  addFloat('더블 점프!', player.x, player.y - 36, '#48c9e5', 13);
-  dexAdd('djump');
-  return true;
+  if (t >= 3) addBurst(player.x, player.y + 8, '#e056fd'); // Lv50: 별빛 폭발
 }
 
 // ---------- 발사 ----------
@@ -1753,7 +1745,6 @@ function update() {
           continue; // 튕기지 않고 통과
         }
         player.y = p.y - player.h / 2;
-        airJumps = airJumpsMax(); // 착지 → 더블 점프 충전
         dexAdd('plat_' + p.type);
         p.squashT = 12; // 밟히면 살짝 눌리는 애니메이션
         for (let di = 0; di < 4; di++) { // 착지 먼지
@@ -1785,6 +1776,7 @@ function update() {
           sfx.spring();
         } else {
           player.vy = jumpV();
+          addJumpFx();
           sfx.jump();
         }
         // 얼음 발판: 잠시 미끄러움 (펭귄은 면역!)
@@ -2187,6 +2179,15 @@ function update() {
   for (const f of floatTexts) { f.life--; if (!f.screen) f.y -= 0.4; }
   floatTexts = floatTexts.filter((f) => f.life > 0);
 
+  // 🌈 점프 이펙트 Lv30+: 상승 중 무지개 궤적
+  if (jumpFxTier() >= 2 && player.vy < -3 && jetpackTimer <= 0 && !boss && frame % 2 === 0) {
+    particles.push({
+      x: player.x + rand(-8, 8), y: player.y + 16,
+      vx: rand(-0.4, 0.4), vy: rand(0.5, 1.2),
+      life: 20, color: `hsl(${(frame * 14) % 360}, 90%, 62%)`,
+    });
+  }
+
   // --- 발자국 꾸미기 (트레일 아이템) ---
   const trailKind = wearing('trail_spark') ? 'spark'
     : wearing('trail_bubble') ? 'bubble'
@@ -2221,13 +2222,13 @@ function update() {
         // 위에서 밟으면: 벌레는 처치, UFO는 밟고 튕기기만
         if (m.kind === 'ufo') {
           player.vy = jumpV();
-          airJumps = airJumpsMax();
+          addJumpFx();
           sfx.jump();
           addBurst(m.x, m.y - m.h / 2, '#95afc0');
         } else {
           m.dead = true;
           player.vy = jumpV();
-          airJumps = airJumpsMax();
+          addJumpFx();
           sfx.hit();
           vib(40);
           addBurst(m.x, m.y, '#9b59b6');
@@ -4668,13 +4669,13 @@ function renderMe() {
 
   if (meTab === 'base') {
     // 실효 수치 스탯 그리드 (강화·캐릭터 능력 반영)
-    const jumpPct = +(upg.jump * 0.4 + (curChar === 'rabbit' ? 10 : 0)).toFixed(1);
+    const jumpPct = +(upg.jump * 0.4 + (upg.jump >= 10 ? 3 : 0) + (upg.jump >= 30 ? 3 : 0) + (upg.jump >= 50 ? 4 : 0) + (curChar === 'rabbit' ? 10 : 0)).toFixed(1);
     const coinPct = upg.coinup + (curChar === 'penguin' ? 10 : 0);
     const cell = (icon, name, val, boost) =>
       `<div class="stat-cell${boost ? ' boost' : ''}"><span>${icon} ${name}</span><b>${val}</b></div>`;
     $('me-info').innerHTML = `<div class="stat-grid">
       ${cell('🦵', '점프력', jumpPct > 0 ? `+${jumpPct}%` : '기본', jumpPct > 0)}
-      ${cell('🪽', '더블 점프', !hasDoubleJump() ? '🔒 Lv10' : upg.jump >= 50 ? '2회!' : upg.jump >= 30 ? '스프링급' : '1회', hasDoubleJump())}
+      ${cell('✨', '점프 이펙트', ['기본', '반짝이', '무지개', '별빛 폭발'][jumpFxTier()], jumpFxTier() > 0)}
       ${cell('💰', '코인 획득', coinPct > 0 ? `+${coinPct}%` : '기본', coinPct > 0)}
       ${cell('🔫', '탄창', `${ammoMax()}발${hasDoubleShot() ? ' ×2' : ''}`, upg.ammo > 0)}
       ${cell('⚡', '번개', upg.thunder > 0 ? `콤보${thunderNeed()} ${thunderBolts()}발` : '🔒 미해금', upg.thunder > 0)}
