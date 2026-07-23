@@ -1009,3 +1009,108 @@ html, body {
   from { transform: translateX(-50%) translateY(14px) scale(0.85); opacity: 0; }
   to { transform: translateX(-50%) translateY(0) scale(1); opacity: 1; }
 }
+
+/* ---------- 랭킹: 명예의 전당 시상대 (1등 가운데 제일 높이) ---------- */
+.podium {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 8px 0;
+  margin-bottom: 8px;
+  background: linear-gradient(180deg, rgba(255, 236, 170, 0.5), rgba(255, 255, 255, 0.1));
+  border-radius: 16px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.podium-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 33%;
+  min-width: 0;
+}
+.podium-crown {
+  font-size: 22px;
+  margin-bottom: -4px;
+  animation: crown-bob 1.6s ease-in-out infinite;
+}
+@keyframes crown-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+.podium-char {
+  width: 54px;
+  height: 54px;
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.25));
+}
+.podium-col.p1 .podium-char {
+  width: 68px;
+  height: 68px;
+}
+.podium-vacant {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 2px dashed #b9aed4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #b9aed4;
+  font-weight: 900;
+  font-size: 20px;
+  margin-bottom: 6px;
+}
+.podium-name {
+  font-weight: 800;
+  font-size: 12px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #4a3f66;
+}
+.podium-col.me .podium-name {
+  color: #7d3fd4;
+}
+.podium-col.me .podium-block {
+  outline: 2px solid #f6b93b;
+}
+.podium-score {
+  font-size: 11px;
+  font-weight: 800;
+  color: #8a7f9f;
+  margin-bottom: 6px;
+}
+.podium-block {
+  width: 100%;
+  border-radius: 10px 10px 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: rgba(255, 255, 255, 0.95);
+  font-weight: 900;
+  font-size: 17px;
+  padding-top: 3px;
+  line-height: 1.15;
+}
+.podium-block span {
+  font-size: 19px;
+  line-height: 1.1;
+}
+.podium-col.p1 .podium-block {
+  height: 84px;
+  background: linear-gradient(180deg, #ffd54d, #e2a90c);
+  box-shadow: 0 -3px 14px rgba(255, 200, 40, 0.5);
+}
+.podium-col.p2 .podium-block {
+  height: 58px;
+  background: linear-gradient(180deg, #d7dee8, #9fadbd);
+}
+.podium-col.p3 .podium-block {
+  height: 46px;
+  background: linear-gradient(180deg, #e8b98a, #c07f46);
+}
+.podium-col.empty {
+  opacity: 0.5;
+}
