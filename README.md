@@ -151,6 +151,27 @@
 - 같은 닉네임은 최고 점수만 표시됩니다
 - (운영 메모) 시상대에 캐릭터가 나오려면 Supabase SQL Editor에서 1회 실행: `alter table public.scores add column charid text;` — 컬럼이 없어도 랭킹은 정상 동작하며 기본 캐릭터(둥이)로 표시됩니다
 
+## ☁️ 계정 & 클라우드 백업
+
+- 접속하면 **자동으로 익명 계정**이 만들어집니다 (로그인 창 없음, 이메일 불필요)
+- 닉네임·코인·강화·캐릭터·도감·기록 등 진행 데이터가 30초마다(변경 시) + 판 종료 시 서버(Supabase `saves` 테이블)에 백업됩니다
+- 내 정보 → 기록 탭에서 **계정 ID / 마지막 백업 시각 / ☁️ 지금 백업 / ⤵️ 서버에서 복원**을 확인·실행할 수 있습니다
+- **운영 흐름**: 유저가 문제를 겪으면 계정 ID(8자리)를 받아 → Supabase 대시보드 Table Editor에서 `saves`의 해당 행 `data`(JSON)를 수정 → 유저가 "서버에서 복원"을 누르면 반영
+- (운영 메모) 최초 1회 설정 필요: ① 대시보드 Authentication → Sign In / Providers에서 **Anonymous sign-ins 활성화**, ② SQL Editor에서 saves 테이블 생성 (README 하단 SQL 참고). 설정 전에도 게임은 정상 동작하며 백업만 대기 상태가 됩니다
+
+```sql
+create table if not exists public.saves (
+  uid uuid primary key references auth.users(id) on delete cascade,
+  name text,
+  data jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+alter table public.saves enable row level security;
+create policy "own select" on public.saves for select to authenticated using (auth.uid() = uid);
+create policy "own insert" on public.saves for insert to authenticated with check (auth.uid() = uid);
+create policy "own update" on public.saves for update to authenticated using (auth.uid() = uid);
+```
+
 ## 도감 & 칭호
 
 - 📖 **도감**: 누적 달성형 수집 **33종** — 발판·아이템·몬스터에 더해 💎 보석, 🌩️ 낙뢰, 진화 보스(🔥❄️👑), 👻 고스트 경주, 🌋 불길, ✊ 가위바위보 승리까지. 잠긴 칸에는 방법 힌트와 진행바가 표시됩니다

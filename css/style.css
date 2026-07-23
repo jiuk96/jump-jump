@@ -1326,3 +1326,29 @@ html, body {
   min-height: 15px;
   text-align: center;
 }
+
+/* ---------- ☁️ 계정 백업 ---------- */
+.cloud-btns {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.cloud-btns button {
+  flex: 1;
+  padding: 9px 6px;
+  border: none;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  color: #fff;
+}
+#btn-cloud-save { background: #3f8efc; }
+#btn-cloud-load { background: #8e6cf0; }
+.cloud-hint {
+  margin-top: 8px;
+  font-size: 10.5px;
+  color: #9a93ad;
+  line-height: 1.5;
+}

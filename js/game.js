@@ -384,6 +384,131 @@ async function submitScore(name, sc, modeStr) {
   }
 }
 
+// ---------- ☁️ 계정(자동 익명 로그인) & 클라우드 백업 ----------
+// 사용자는 로그인 창 없이 자동으로 계정이 만들어지고, 진행 데이터가 서버에 백업된다.
+// 문제 발생 시: 운영자가 Supabase 대시보드에서 saves 테이블의 해당 계정(data)을 고치고,
+// 사용자는 내 정보 → '서버에서 복원'을 누르면 반영된다.
+const CLOUD_KEYS = [
+  'jump-best', 'jump-best2', 'jump-coins', 'jump-inv', 'jump-stats', 'jump-ach',
+  'jump-equip', 'jump-upg', 'jump-chars', 'jump-char', 'jump-name',
+  'jump-dex', 'jump-dexn', 'jump-settings', 'jump-title', 'jump-control',
+];
+let cloud = { uid: null, at: null, atExp: 0, rt: null, lastHash: '', lastSyncAt: 0, status: 'init' };
+try {
+  const a = JSON.parse(localStorage.getItem('jump-auth') || 'null');
+  if (a && a.rt && a.uid) { cloud.rt = a.rt; cloud.uid = a.uid; }
+} catch (e) {}
+function cloudSaveAuth() { localStorage.setItem('jump-auth', JSON.stringify({ rt: cloud.rt, uid: cloud.uid })); }
+
+async function ensureCloudSession() {
+  if (cloud.at && Date.now() < cloud.atExp - 30000) return true;
+  try {
+    if (cloud.rt) { // 저장된 계정으로 재접속
+      const res = await fetch(`${SUPA_URL}/auth/v1/token?grant_type=refresh_token`, {
+        method: 'POST',
+        headers: { apikey: SUPA_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: cloud.rt }),
+      });
+      if (res.ok) {
+        const j = await res.json();
+        cloud.at = j.access_token;
+        cloud.rt = j.refresh_token || cloud.rt;
+        cloud.uid = (j.user && j.user.id) || cloud.uid;
+        cloud.atExp = Date.now() + (j.expires_in || 3600) * 1000;
+        cloud.status = 'ok';
+        cloudSaveAuth();
+        return true;
+      }
+      cloud.rt = null; // 만료된 계정 → 새로 만듦
+    }
+    const res2 = await fetch(`${SUPA_URL}/auth/v1/signup`, { // 익명 가입 (이메일 불필요)
+      method: 'POST',
+      headers: { apikey: SUPA_KEY, 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    if (!res2.ok) { cloud.status = 'off'; return false; } // 대시보드에서 익명 로그인 미설정
+    const j2 = await res2.json();
+    if (!j2.access_token || !j2.user) { cloud.status = 'off'; return false; }
+    cloud.at = j2.access_token;
+    cloud.rt = j2.refresh_token;
+    cloud.uid = j2.user.id;
+    cloud.atExp = Date.now() + (j2.expires_in || 3600) * 1000;
+    cloud.status = 'ok';
+    cloudSaveAuth();
+    return true;
+  } catch (e) {
+    cloud.status = 'err';
+    return false;
+  }
+}
+
+function cloudSnapshot() {
+  const keys = {};
+  for (const k of CLOUD_KEYS) {
+    const v = localStorage.getItem(k);
+    if (v !== null) keys[k] = v;
+  }
+  return keys;
+}
+
+async function cloudSync(force = false) {
+  const keys = cloudSnapshot();
+  const hash = JSON.stringify(keys);
+  if (!force && hash === cloud.lastHash) return false; // 변경 없으면 전송 안 함
+  if (!(await ensureCloudSession())) return false;
+  try {
+    const res = await fetch(`${SUPA_URL}/rest/v1/saves?on_conflict=uid`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPA_KEY,
+        Authorization: `Bearer ${cloud.at}`,
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=minimal',
+      },
+      body: JSON.stringify({
+        uid: cloud.uid,
+        name: myName || null,
+        data: { v: GAME_VERSION, keys },
+        updated_at: new Date().toISOString(),
+      }),
+    });
+    if (res.ok) {
+      cloud.lastHash = hash;
+      cloud.lastSyncAt = Date.now();
+      cloud.status = 'ok';
+      return true;
+    }
+    cloud.status = 'err';
+    return false;
+  } catch (e) {
+    cloud.status = 'err';
+    return false;
+  }
+}
+
+async function cloudRestore() {
+  if (!(await ensureCloudSession())) return { ok: false };
+  try {
+    const res = await fetch(`${SUPA_URL}/rest/v1/saves?uid=eq.${cloud.uid}&select=data,updated_at`, {
+      headers: { apikey: SUPA_KEY, Authorization: `Bearer ${cloud.at}` },
+    });
+    if (!res.ok) return { ok: false };
+    const rows = await res.json();
+    if (!rows.length || !rows[0].data || !rows[0].data.keys) return { ok: false, empty: true };
+    for (const [k, v] of Object.entries(rows[0].data.keys)) localStorage.setItem(k, v);
+    return { ok: true, at: rows[0].updated_at };
+  } catch (e) {
+    return { ok: false };
+  }
+}
+
+// 백업 루프: 접속 2.5초 후 1회 → 이후 30초마다 변경분만, 백그라운드 전환 시에도
+setTimeout(() => { ensureCloudSession().then(() => cloudSync(true)); }, 2500);
+setInterval(() => { cloudSync(false); }, 30000);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') cloudSync(false);
+});
+
 // 최근 상위 기록을 가져와 닉네임별 최고점만 남김
 async function fetchScores(tab, series = 1) {
   let dateFilter = '';
@@ -4752,7 +4877,18 @@ function renderMe() {
       ${worn.length ? worn.map((w) => `<div class="me-row"><span>${w}</span><b>착용 ✓</b></div>`).join('') : '<div class="me-row"><span>없음 — 상점에서 꾸며보세요!</span></div>'}
     </div>`;
   } else {
-    $('me-info').innerHTML = `<div class="me-section"><h3>📊 누적 기록</h3>
+    const cloudLabel = { ok: '✅ 연동됨', off: '⚠️ 서버 설정 대기', err: '⚠️ 연결 오류', init: '⏳ 연결 중...' }[cloud.status] || '-';
+    const lastSync = cloud.lastSyncAt ? new Date(cloud.lastSyncAt).toLocaleTimeString('ko-KR') : '아직 없음';
+    $('me-info').innerHTML = `<div class="me-section"><h3>☁️ 계정 백업</h3>
+      <div class="me-row"><span>상태</span><b>${cloudLabel}</b></div>
+      <div class="me-row"><span>계정 ID</span><b>${cloud.uid ? cloud.uid.slice(0, 8) : '-'}</b></div>
+      <div class="me-row"><span>마지막 백업</span><b>${lastSync}</b></div>
+      <div class="cloud-btns">
+        <button id="btn-cloud-save">☁️ 지금 백업</button>
+        <button id="btn-cloud-load">⤵️ 서버에서 복원</button>
+      </div>
+      <p class="cloud-hint">문제가 생기면 계정 ID와 함께 문의하세요 — 서버에서 고친 뒤 복원하면 됩니다.</p>
+    </div>` + `<div class="me-section"><h3>📊 누적 기록</h3>
       <div class="me-row"><span>🏆 최고 기록</span><b>${best.toLocaleString()}</b></div>
       <div class="me-row"><span>🎮 플레이 횟수</span><b>${stats.runs.toLocaleString()}판</b></div>
       <div class="me-row"><span>📈 누적 점수</span><b>${stats.totalScore.toLocaleString()}</b></div>
@@ -4763,6 +4899,25 @@ function renderMe() {
       <div class="me-row"><span>📖 도감</span><b>${dex.size}/${Object.keys(DEX).length}</b></div>
       <div class="me-row"><span>🌕 달 착륙</span><b>${stats.moon ? '성공!' : '아직'}</b></div>
     </div>`;
+    // ☁️ 백업/복원 버튼
+    $('btn-cloud-save').addEventListener('click', async () => {
+      $('btn-cloud-save').textContent = '☁️ 백업 중...';
+      const okS = await cloudSync(true);
+      $('btn-cloud-save').textContent = okS ? '✅ 백업 완료!' : '⚠️ 실패 (연결 확인)';
+      setTimeout(() => renderMe(), 1500);
+    });
+    $('btn-cloud-load').addEventListener('click', async () => {
+      if (!confirm('서버에 저장된 데이터로 되돌릴까요?\n(현재 기기의 진행 상황을 덮어씁니다)')) return;
+      $('btn-cloud-load').textContent = '⤵️ 복원 중...';
+      const r = await cloudRestore();
+      if (r.ok) {
+        alert('복원 완료! 게임을 다시 불러옵니다.');
+        location.reload();
+      } else {
+        $('btn-cloud-load').textContent = r.empty ? '⚠️ 서버에 저장본 없음' : '⚠️ 실패 (연결 확인)';
+        setTimeout(() => renderMe(), 1800);
+      }
+    });
   }
   renderMePreview();
 }
@@ -4964,6 +5119,7 @@ function gameOver() {
   fireBtn.classList.add('hidden');
   showMoveBtns(false);
   autoSubmitScore();
+  cloudSync(false); // ☁️ 판 종료 시 백업
 }
 
 function goHome() {
@@ -5103,6 +5259,7 @@ function runnerOver() {
   pauseBtn.classList.add('hidden');
   showMoveBtns(false);
   autoSubmitScore(m, 'runner'); // 문 런 랭킹 등록 (100m 미만 제외)
+  cloudSync(false); // ☁️ 판 종료 시 백업
 }
 
 function updateRunner() {
@@ -5838,7 +5995,7 @@ $('mp-reset').addEventListener('click', () => {
 });
 
 // ---------- 버전 표시 & 최신 버전 유도 ----------
-const GAME_VERSION = 55; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
+const GAME_VERSION = 56; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
 const verLabel = $('version-label');
 function setVerLabel(txt, cls) {
   if (!verLabel) return;
