@@ -579,8 +579,10 @@ async function fetchScores(tab, series = 1) {
     : series === 3 ? '&mode=eq.fighter'
     : tab === 'day' ? '&mode=eq.daily'
     : '&mode=in.(normal,daily)';
+  // 매 판마다 새 행이 쌓이므로, 특정 유저의 최고 기록이 상위 윈도에서 밀려 랭킹이
+  // 갱신 안 되는 걸 막기 위해 넉넉히(1000행) 받아서 이름별 최고만 추린다.
   const get = (cols, mf) =>
-    fetch(`${SUPA_URL}/rest/v1/scores?select=${cols}&order=score.desc&limit=300${mf}${dateFilter}`, { headers: supaHeaders });
+    fetch(`${SUPA_URL}/rest/v1/scores?select=${cols}&order=score.desc&limit=1000${mf}${dateFilter}`, { headers: supaHeaders });
   let res = await get('name,score,created_at,charid', modeFilter);
   if (!res.ok) res = await get('name,score,created_at', modeFilter); // charid 컬럼 폴백
   if (!res.ok && series === 1) res = await get('name,score,created_at', tab === 'day' ? '&mode=eq.daily' : ''); // 구버전 폴백
@@ -4799,7 +4801,14 @@ function loop(now) {
       }
     }
   }
-  if (runnerMode) drawRunner(); else if (fighterMode) drawFighter(); else draw();
+  if (runnerMode && state === State.OVER) {
+    // 종료 화면: 세로로 되돌아온 캔버스를 우주색으로 깔끔히 채움(러너 장면 왜곡 방지)
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#0b1836';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  } else if (runnerMode) drawRunner();
+  else if (fighterMode) drawFighter();
+  else draw();
   rafId = requestAnimationFrame(loop);
 }
 
@@ -6131,8 +6140,10 @@ function series3Unlocked() { return !!stats.run2Clear; }
 function updateRunnerOrientation() {
   const gc = document.getElementById('game-container');
   const portraitVp = window.innerHeight >= window.innerWidth;
-  gc.classList.toggle('landscape', runnerMode && portraitVp);       // 세로 기기: 90° 회전
-  gc.classList.toggle('landscape-full', runnerMode && !portraitVp); // 가로 기기: 전체 폭 사용
+  // 러너 게임이 진행 중일 때만 가로. 종료(OVER) 화면에선 세로로 되돌려 오버레이 짤림 방지
+  const activeRun = runnerMode && state !== State.OVER;
+  gc.classList.toggle('landscape', activeRun && portraitVp);       // 세로 기기: 90° 회전
+  gc.classList.toggle('landscape-full', activeRun && !portraitVp); // 가로 기기: 전체 폭 사용
   resize();
 }
 window.addEventListener('resize', updateRunnerOrientation);
@@ -6228,6 +6239,7 @@ function runnerHit(kind) {
 function runnerOver(cleared2 = false, firstClear = false) {
   state = State.OVER;
   $('run-btns').classList.add('hidden');
+  updateRunnerOrientation(); // 🔄 세로 복귀 → 종료 화면이 짤리지 않게
   bgm.stop();
   vib(160);
   const m = Math.floor(R.dist);
@@ -7412,7 +7424,7 @@ $('mp-reset').addEventListener('click', () => {
 });
 
 // ---------- 버전 표시 & 최신 버전 유도 ----------
-const GAME_VERSION = 68; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
+const GAME_VERSION = 69; // 배포 때마다 sw.js CACHE_VERSION과 함께 올림
 const verLabel = $('version-label');
 function setVerLabel(txt, cls) {
   if (!verLabel) return;
